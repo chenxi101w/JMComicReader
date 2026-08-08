@@ -2,7 +2,7 @@
 
 一个基于 [pywebview](https://pywebview.flowrl.com/) + Flask 的 Windows 桌面漫画阅读/下载器，界面采用类 App 的移动优先设计，支持搜索、阅读、下载、书架管理与推荐。
 
-> 当前版本：**v2.4.1**
+> 当前版本：**v2.4.3**
 
 ---
 

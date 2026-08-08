@@ -33,15 +33,6 @@
         <i class="fas fa-chevron-right cat-card__arrow"></i>
       </button>
 
-      <button class="cat-card" data-cat="search-prefs">
-        <span class="cat-card__icon"><i class="fas fa-heart"></i></span>
-        <span class="cat-card__main">
-          <span class="cat-card__title">搜索偏好库</span>
-          <span class="cat-card__desc">历史 / 标签 / 作者 · 误删可恢复</span>
-        </span>
-        <i class="fas fa-chevron-right cat-card__arrow"></i>
-      </button>
-
       <button class="cat-card" data-cat="appearance">
         <span class="cat-card__icon"><i class="fas fa-palette"></i></span>
         <span class="cat-card__main">
@@ -251,11 +242,26 @@
             <div id="aliasSuggest" class="manage-list" style="display:none"></div>
           </div>
         </div>
-      </div>
 
-      <div class="drill-panel" data-cat="search-prefs">
-        <h3 class="section-title pref-lib-title" id="prefLibToggle" role="button" tabindex="0" title="展开 / 收起">
-          <i class="fas fa-heart"></i> 搜索偏好库
+        <div class="subsection-title">标签高亮</div>
+        <div class="setting-row">
+          <div class="setting-row__icon"><i class="fas fa-highlighter"></i></div>
+          <div class="setting-row__main">
+            <div class="setting-row__label">收藏但未选中的标签如何高亮</div>
+            <div class="setting-row__desc">搜索下拉里收藏标签的显示方式</div>
+          </div>
+          <div class="setting-row__control">
+            <select id="favTagHighlight" class="search-input" style="padding:6px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface-2)">
+              <option value="same">同高亮</option>
+              <option value="dim">淡亮</option>
+              <option value="off">不亮</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="subsection-title">搜索偏好库</div>
+        <h3 class="section-title pref-lib-title" id="prefLibToggle" role="button" tabindex="0" title="展开 / 收起" style="margin-top:6px">
+          <i class="fas fa-heart"></i> 历史 / 标签 / 作者
           <span class="pref-lib-sub">误删可恢复 · 可编辑删减</span>
           <i class="fas fa-chevron-down pref-lib-caret"></i>
         </h3>

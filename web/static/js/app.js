@@ -591,9 +591,12 @@ async function unblockComic(jmId, author) {
 /* ── 导航高亮 ─────────────────────────────────────────── */
 function setupNav() {
   const p = location.pathname;
-  const cur = p.startsWith('/library') ? 'library' : p.startsWith('/settings') ? 'settings'
+  const cur = p.startsWith('/home') ? 'home'
+    : p.startsWith('/library') ? 'library'
+    : p.startsWith('/settings') ? 'settings'
     : p.startsWith('/downloads') ? 'downloads'
-    : p.startsWith('/reader') ? 'library' : 'search';
+    : p.startsWith('/reader') ? 'library'
+    : 'search';
   document.querySelectorAll('.nav-item').forEach(n => {
     n.classList.toggle('nav-item--active', n.dataset.route === cur);
   });
@@ -651,6 +654,83 @@ function cardTagsHtml(tags, selectedTags = null, favs = null) {
   return html;
 }
 
+/* 漫画卡片渲染（模块级，搜索页 / 主页推荐 / 屏蔽预览 共用）
+   opts.onAuthorClick(author)：点击作者名时的回调；不传则仅展示不可点。 */
+function renderCards(list, append = true, target = null, opts = {}) {
+  const grid = target || document.getElementById('comicGrid');
+  if (!grid) return;
+  if (!append) grid.innerHTML = '';
+  const favTagsSet = FavTags.list();
+  const favAuthorsSet = FavAuthors.list();
+  const onAuthorClick = opts.onAuthorClick || null;
+  list.forEach((c, i) => {
+    const id = c.id || c.album_id || c.comic_id;
+    const author = c.author || '';
+    const isFavAuthor = author && favAuthorsSet.includes(author);
+    const card = document.createElement('div');
+    card.className = 'comic-card';
+    card.dataset.jmId = id;
+    card.dataset.title = c.title || '';
+    card.dataset.author = author;
+    card.dataset.tags = (c.tags || []).join(',');
+    card.dataset.pages = String(c.pages || 0);
+    card.style.animationDelay = (Math.min(i, 15) * 0.03) + 's';
+    card.innerHTML = `
+      <img class="comic-card__cover" data-cover="${id}" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='3' height='4'%3E%3C/svg%3E">
+      <div class="comic-card__body">
+        <div class="comic-card__title">${escapeHtml(c.title || '未命名漫画')}</div>
+        ${author ? `<div class="comic-card__meta"><span class="author-name" data-author="${escapeHtml(author)}">${escapeHtml(author)}</span></div>` : ''}
+        ${renderPageChapter(c.pages, 0)}
+        <div class="comic-card__tags">${cardTagsHtml(c.tags, opts.favSel || new Set(), favTagsSet)}</div>
+        <div class="comic-card__actions unified">
+          <button class="act act--primary" data-act="dl" title="下载"><i class="fas fa-download"></i></button>
+          <button class="act act--toggle${isFavAuthor ? ' on' : ''}" data-act="fav-author" title="收藏作者"><i class="fas fa-star"></i></button>
+          <button class="act act--danger" data-act="block-author" title="拉黑作者"><i class="fas fa-user-slash"></i></button>
+          <button class="act act--danger" data-act="block-work" title="拉黑作品"><i class="fas fa-ban"></i></button>
+        </div>
+      </div>`;
+    card.querySelector('[data-act="dl"]').onclick = (e) => {
+      e.stopPropagation();
+      pickCategories([], (cats) => downloadComic(id, cats, c.title));
+    };
+    card.querySelector('[data-act="fav-author"]').onclick = (e) => {
+      e.stopPropagation();
+      if (FavAuthors.list().includes(author)) { FavAuthors.remove(author); e.currentTarget.classList.remove('on'); }
+      else { FavAuthors.add(author); e.currentTarget.classList.add('on'); }
+    };
+    card.querySelector('[data-act="block-author"]').onclick = (e) => {
+      e.stopPropagation();
+      blockAuthor(author);
+    };
+    card.querySelector('[data-act="block-work"]').onclick = (e) => {
+      e.stopPropagation();
+      blockWork(id, c.title);
+    };
+    card.querySelectorAll('.comic-card__tag').forEach(tg => {
+      tg.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const t = tg.dataset.tag;
+        if (FavTags.list().includes(t)) { FavTags.remove(t); tg.classList.remove('on'); }
+        else { FavTags.add(t); tg.classList.add('on'); }
+      });
+      tg.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        showTagContextMenu(e.clientX, e.clientY, tg.dataset.tag, tg);
+      });
+    });
+    const authorName = card.querySelector('.author-name');
+    if (authorName && onAuthorClick) {
+      authorName.addEventListener('click', (e) => {
+        e.stopPropagation();
+        onAuthorClick(authorName.dataset.author);
+      });
+      authorName.classList.add('author-name--clickable');
+    }
+    grid.appendChild(card);
+  });
+}
+
 function initSearch() {
   const grid = document.getElementById('comicGrid');
   const input = document.getElementById('searchInput');
@@ -663,6 +743,7 @@ function initSearch() {
   const dirSel = document.getElementById('sortDir');
   let page = 1, keyword = '', total = 0, loadingMore = false;
   const main = document.getElementById('appMain');
+  const clearKwBtn = document.getElementById('clearKwBtn');
   loadAppConfig(); // 预载配置，使标签显示数量限制即时生效
 
   // ── 搜索偏好（排序/时间/方向）持久化 ──
@@ -733,6 +814,16 @@ function initSearch() {
   // ── 收藏标签 / 作者：统一的芯片列表渲染（消除两套重复逻辑）──
   const favSel = new Set();
   const authorSel = new Set();
+  const searchCardOpts = {
+    favSel,
+    onAuthorClick: (author) => {
+      input.value = '';
+      authorSel.clear(); favSel.clear();
+      authorSel.add(author);
+      hideSearchDrop();
+      clearState(); doSearch(true);
+    }
+  };
   function renderChipList(listEl, emptyEl, arr, selSet, cls, dataAttr, delCls, cat) {
     if (!listEl) return;
     if (emptyEl) emptyEl.style.display = arr.length ? 'none' : 'block';
@@ -815,7 +906,7 @@ function initSearch() {
       if (Array.isArray(s.sel_authors)) { s.sel_authors.forEach(a => authorSel.add(a)); }
       if (s.keyword && s.cards && s.cards.length) {
         keyword = s.keyword; page = s.page || 1; total = s.total || 0;
-        renderCards(s.cards, false);
+        renderCards(s.cards, false, grid, searchCardOpts);
         if (countEl) countEl.textContent = `${s.total || 0} 个结果（已恢复）`;
         document.getElementById('loadMore').style.display = (s.hasMore || false) ? 'block' : 'none';
         renderFavTags(); renderFavAuthors(); updateQuickTagHighlight();         updateSearchCond(keyword, [...favSel], [...authorSel], getSearchMode());
@@ -858,7 +949,6 @@ function initSearch() {
     const selTags = [...favSel];
     const selAuthors = [...authorSel];
     const hasKw = !!keyword, hasTag = selTags.length > 0, hasAuthor = selAuthors.length > 0;
-    hideRecommendations(); // 一旦发起搜索，聚焦结果，隐藏推荐区
     if (!hasKw && !hasTag && !hasAuthor) { toast('请输入关键词、选择标签或选择作者', 'warn'); return; }
     if (reset) {
       if (keyword) SearchHistory.add(keyword);
@@ -892,7 +982,7 @@ function initSearch() {
       }
       loading.style.display = 'none';
       if (res.success && res.data && res.data.length) {
-        renderCards(res.data); total = res.data.length;
+        renderCards(res.data, true, grid, searchCardOpts); total = res.data.length;
         countEl.textContent = `${total} 个结果`;
         if (!hasTag && !hasAuthor) {
           const hasMore = res.data.length >= 20;
@@ -913,120 +1003,6 @@ function initSearch() {
     attachRipple(grid);
     setupLazyCovers(grid);
     saveState(false);
-  }
-
-  function renderCards(list, append = true, target = grid) {
-    if (!append) target.innerHTML = '';
-    // 循环外一次性取出收藏列表，避免每张卡片重复 JSON.parse（O(n·m) → O(n+m)）
-    const favTagsSet = FavTags.list();
-    const favAuthorsSet = FavAuthors.list();
-    list.forEach((c, i) => {
-      const id = c.id || c.album_id || c.comic_id;
-      const author = c.author || '';
-      const isFavAuthor = author && favAuthorsSet.includes(author);
-      const card = document.createElement('div');
-      card.className = 'comic-card';
-      card.dataset.jmId = id;
-      card.dataset.title = c.title || '';
-      card.dataset.author = author;
-      card.dataset.tags = (c.tags || []).join(',');
-      card.dataset.pages = String(c.pages || 0);
-      card.style.animationDelay = (Math.min(i, 15) * 0.03) + 's';
-      card.innerHTML = `
-        <img class="comic-card__cover" data-cover="${id}" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='3' height='4'%3E%3C/svg%3E">
-        <div class="comic-card__body">
-          <div class="comic-card__title">${escapeHtml(c.title || '未命名漫画')}</div>
-          ${author ? `<div class="comic-card__meta"><span class="author-name" data-author="${escapeHtml(author)}">${escapeHtml(author)}</span></div>` : ''}
-          ${renderPageChapter(c.pages, 0)}
-          <div class="comic-card__tags">${cardTagsHtml(c.tags, favSel, favTagsSet)}</div>
-          <div class="comic-card__actions unified">
-            <button class="act act--primary" data-act="dl" title="下载"><i class="fas fa-download"></i></button>
-            <button class="act act--toggle${isFavAuthor ? ' on' : ''}" data-act="fav-author" title="收藏作者"><i class="fas fa-star"></i></button>
-            <button class="act act--danger" data-act="block-author" title="拉黑作者"><i class="fas fa-user-slash"></i></button>
-            <button class="act act--danger" data-act="block-work" title="拉黑作品"><i class="fas fa-ban"></i></button>
-          </div>
-        </div>`;
-      card.querySelector('[data-act="dl"]').onclick = (e) => {
-        e.stopPropagation();
-        pickCategories([], (cats) => downloadComic(id, cats, c.title));
-      };
-      card.querySelector('[data-act="fav-author"]').onclick = (e) => {
-        e.stopPropagation();
-        if (FavAuthors.list().includes(author)) { FavAuthors.remove(author); e.currentTarget.classList.remove('on'); }
-        else { FavAuthors.add(author); e.currentTarget.classList.add('on'); }
-      };
-      card.querySelector('[data-act="block-author"]').onclick = (e) => {
-        e.stopPropagation();
-        blockAuthor(author);
-      };
-      card.querySelector('[data-act="block-work"]').onclick = (e) => {
-        e.stopPropagation();
-        blockWork(id, c.title);
-      };
-      card.querySelectorAll('.comic-card__tag').forEach(tg => {
-        tg.addEventListener('click', (e) => {
-          e.stopPropagation();
-          const t = tg.dataset.tag;
-          if (FavTags.list().includes(t)) { FavTags.remove(t); tg.classList.remove('on'); }
-          else { FavTags.add(t); tg.classList.add('on'); }
-        });
-        tg.addEventListener('contextmenu', (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          showTagContextMenu(e.clientX, e.clientY, tg.dataset.tag, tg);
-        });
-      });
-      const authorName = card.querySelector('.author-name');
-      if (authorName) {
-        authorName.addEventListener('click', (e) => {
-          e.stopPropagation();
-          input.value = '';
-          authorSel.clear(); favSel.clear();
-          authorSel.add(authorName.dataset.author);
-                     hideSearchDrop();
-          clearState(); doSearch(true);
-        });
-      }
-      target.appendChild(card);
-    });
-  }
-
-  // ── 自动推荐（搜索页主页展示）──
-  const recommendSection = document.getElementById('recommendSection');
-  const recommendGrid = document.getElementById('recommendGrid');
-  const recommendLoading = document.getElementById('recommendLoading');
-  const recommendEmpty = document.getElementById('recommendEmpty');
-  const recommendNote = document.getElementById('recommendNote');
-  function hideRecommendations() { if (recommendSection) recommendSection.style.display = 'none'; }
-  function showRecommendations() { if (recommendSection) recommendSection.style.display = ''; }
-  async function loadRecommendations() {
-    if (!recommendSection || !recommendGrid) return;
-    showRecommendations();
-    recommendGrid.innerHTML = '';
-    if (recommendEmpty) recommendEmpty.style.display = 'none';
-    if (recommendLoading) recommendLoading.style.display = 'block';
-    if (recommendNote) recommendNote.textContent = '';
-    try {
-      const r = await api('GET', '/api/recommend');
-      if (recommendLoading) recommendLoading.style.display = 'none';
-      if (!r.success || !r.enabled) { hideRecommendations(); return; }
-      const data = r.data || [];
-      if (!data.length) {
-        if (recommendEmpty) recommendEmpty.style.display = 'block';
-        if (recommendNote && r.note) recommendNote.textContent = r.note;
-        return;
-      }
-      renderCards(data, false, recommendGrid);
-      attachRipple(recommendGrid);
-      setupLazyCovers(recommendGrid);
-      if (recommendNote) {
-        const src = (r.seeds && r.seeds.length) ? `基于 ${r.seeds.length} 个兴趣词` : '';
-        recommendNote.textContent = src + (r.is_default ? ' · 默认' : '');
-      }
-    } catch (e) {
-      if (recommendLoading) recommendLoading.style.display = 'none';
-      hideRecommendations();
-    }
   }
 
   // ── 事件绑定 ──
@@ -1078,36 +1054,7 @@ function initSearch() {
     }
   });
 
-  // 收藏标签高亮模式
-  const favTagHighlight = document.getElementById('favTagHighlight');
-  if (favTagHighlight) {
-    favTagHighlight.value = Settings.get('fav_tag_highlight', 'same');
-    favTagHighlight.addEventListener('change', () => {
-      Settings.set('fav_tag_highlight', favTagHighlight.value);
-      // 刷新当前结果卡片上的标签高亮
-      const favArr = FavTags.list();
-      document.querySelectorAll('.comic-card').forEach(card => {
-        const tags = (card.dataset.tags || '').split(',').filter(Boolean);
-        const tagsEl = card.querySelector('.comic-card__tags');
-        if (tagsEl) tagsEl.innerHTML = cardTagsHtml(tags, favSel, favArr);
-        tagsEl.querySelectorAll('.comic-card__tag').forEach(tg => {
-          tg.addEventListener('click', (e) => {
-            e.stopPropagation();
-            const t = tg.dataset.tag;
-            if (favArr.includes(t)) { FavTags.remove(t); tg.classList.remove('on'); }
-            else { FavTags.add(t); tg.classList.add('on'); }
-          });
-          tg.addEventListener('contextmenu', (e) => {
-            e.preventDefault(); e.stopPropagation();
-            showTagContextMenu(e.clientX, e.clientY, tg.dataset.tag, tg);
-          });
-        });
-      });
-    });
-  }
-
   // ── 清空按钮 ──
-  const clearKwBtn = document.getElementById('clearKwBtn');
   function syncClearKwBtn() {
     if (!clearKwBtn) return;
     clearKwBtn.classList.toggle('sb-clear--visible', !!input.value.trim());
@@ -1217,14 +1164,49 @@ function initSearch() {
   window.addEventListener('pagehide', saveScrollPos);
   document.addEventListener('visibilitychange', () => { if (document.hidden) saveScrollPos(); });
   document.addEventListener('click', saveScrollPos, true);
-
-  // 打开搜索页时加载兴趣推荐（已恢复搜索结果 / URL 触发搜索时则隐藏，聚焦结果）
-  if (!restored && !urlTriggered) {
-    loadRecommendations();
-  } else {
-    hideRecommendations();
-  }
 }
+
+/* ═══════════════════════════════════════════════════════
+   主页（推荐）
+   ═══════════════════════════════════════════════════════ */
+function initHome() {
+  const recommendGrid = document.getElementById('recommendGrid');
+  const recommendLoading = document.getElementById('recommendLoading');
+  const recommendEmpty = document.getElementById('recommendEmpty');
+  const recommendNote = document.getElementById('recommendNote');
+  if (!recommendGrid) return;
+  async function loadRecommendations() {
+    recommendGrid.innerHTML = '';
+    if (recommendEmpty) recommendEmpty.style.display = 'none';
+    if (recommendLoading) recommendLoading.style.display = 'block';
+    if (recommendNote) recommendNote.textContent = '';
+    try {
+      const r = await api('GET', '/api/recommend');
+      if (recommendLoading) recommendLoading.style.display = 'none';
+      if (!r.success || !r.enabled) { if (recommendEmpty) recommendEmpty.style.display = 'block'; return; }
+      const data = r.data || [];
+      if (!data.length) {
+        if (recommendEmpty) recommendEmpty.style.display = 'block';
+        if (recommendNote && r.note) recommendNote.textContent = r.note;
+        return;
+      }
+      renderCards(data, false, recommendGrid, {
+        onAuthorClick: (author) => { location.href = `/search?author=${encodeURIComponent(author)}`; }
+      });
+      attachRipple(recommendGrid);
+      setupLazyCovers(recommendGrid);
+      if (recommendNote) {
+        const src = (r.seeds && r.seeds.length) ? `基于 ${r.seeds.length} 个兴趣词` : '';
+        recommendNote.textContent = src + (r.is_default ? ' · 默认' : '');
+      }
+    } catch (e) {
+      if (recommendLoading) recommendLoading.style.display = 'none';
+      if (recommendEmpty) recommendEmpty.style.display = 'block';
+    }
+  }
+  loadRecommendations();
+}
+
 /* ═══════════════════════════════════════════════════════
    阅读页（书架 + 分类树）
    ═══════════════════════════════════════════════════════ */
@@ -1516,10 +1498,11 @@ function initSettings() {
       document.getElementById('cacheSize').textContent = `${r.data.remaining_size_mb} MB`; }
   };
 
-  // 分类钻取导航：点分类块 → 展开对应详情面板，返回回到分类列表
+  // 分类钻取导航：点分类块 → 展开对应详情面板；返回回到上一层（主页或父级面板）
   const settingsHome = document.getElementById('settingsHome');
   const settingsDetail = document.getElementById('settingsDetail');
-  function openDrill(cat) {
+  const drillStack = []; // 记录父级面板 cat，支持屏蔽管理 → 搜索设置 这样的二级返回
+  function showDrillPanel(cat) {
     if (!settingsDetail) return;
     settingsDetail.querySelectorAll('.drill-panel').forEach(p => { p.hidden = (p.dataset.cat !== cat); });
     if (settingsHome) settingsHome.hidden = true;
@@ -1531,24 +1514,61 @@ function initSettings() {
     settingsDetail.classList.add('page-enter');
     if (cat === 'block') loadBlocklist();
   }
+  function openDrill(cat, parentCat = null) {
+    if (parentCat) drillStack.push(parentCat);
+    else drillStack.length = 0; // 从设置主页进入新分类，清空栈
+    showDrillPanel(cat);
+  }
   if (settingsHome && settingsDetail) {
     settingsHome.querySelectorAll('.cat-card').forEach(card => {
       card.addEventListener('click', () => openDrill(card.dataset.cat));
     });
     const drillBack = document.getElementById('drillBack');
     if (drillBack) drillBack.addEventListener('click', () => {
-      // 优先像浏览器一样返回上一页（例如从搜索→设置→屏蔽管理，点返回回搜索）
-      if (history.length > 1) { history.back(); return; }
-      settingsDetail.hidden = true;
-      settingsHome.hidden = false;
-      window.scrollTo({ top: 0 });
+      if (drillStack.length) {
+        const prev = drillStack.pop();
+        showDrillPanel(prev);
+      } else {
+        settingsDetail.hidden = true;
+        settingsHome.hidden = false;
+        window.scrollTo({ top: 0 });
+      }
     });
     const blockPageBtn = document.getElementById('blockPageBtn');
-    if (blockPageBtn) blockPageBtn.addEventListener('click', () => openDrill('block'));
+    if (blockPageBtn) blockPageBtn.addEventListener('click', () => openDrill('block', 'search'));
   }
 
-  // 搜索偏好库（历史 / 标签 / 作者 统一管理，误删可恢复）—— 见 settings.html 的 data-cat="search-prefs"
+  // 搜索偏好库（历史 / 标签 / 作者 统一管理，误删可恢复）—— 现在内嵌在「搜索设置」分类里
   initPrefLib();
+
+  // 收藏标签高亮模式（已从搜索下拉面板移到搜索设置）
+  const favTagHighlight = document.getElementById('favTagHighlight');
+  if (favTagHighlight) {
+    favTagHighlight.value = Settings.get('fav_tag_highlight', 'same');
+    favTagHighlight.addEventListener('change', () => {
+      Settings.set('fav_tag_highlight', favTagHighlight.value);
+      // 刷新当前结果卡片上的标签高亮
+      const favArr = FavTags.list();
+      document.querySelectorAll('.comic-card').forEach(card => {
+        const tags = (card.dataset.tags || '').split(',').filter(Boolean);
+        const tagsEl = card.querySelector('.comic-card__tags');
+        if (!tagsEl) return;
+        tagsEl.innerHTML = cardTagsHtml(tags, new Set(), favArr);
+        tagsEl.querySelectorAll('.comic-card__tag').forEach(tg => {
+          tg.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const t = tg.dataset.tag;
+            if (FavTags.contains(t)) { FavTags.remove(t); tg.classList.remove('on'); }
+            else { FavTags.add(t); tg.classList.add('on'); }
+          });
+          tg.addEventListener('contextmenu', (e) => {
+            e.preventDefault(); e.stopPropagation();
+            showTagContextMenu(e.clientX, e.clientY, tg.dataset.tag, tg);
+          });
+        });
+      });
+    });
+  }
 
   // 设置项加载
   api('GET', '/api/settings').then(r => {
@@ -2320,6 +2340,7 @@ document.addEventListener('DOMContentLoaded', () => {
   else if (p.startsWith('/reader/')) initReader();
   else if (p.startsWith('/library')) initLibrary();
   else if (p.startsWith('/settings')) initSettings();
+  else if (p.startsWith('/home')) initHome();
   else initSearch();
 
   // 全局可拖动返回键

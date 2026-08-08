@@ -79,7 +79,11 @@ def _cleanup_progress(download_id: str) -> None:
 
 @app.route("/")
 def index():
-    return redirect("/search")
+    return redirect("/home")
+
+@app.route("/home")
+def home_page():
+    return render_template("home.html")
 
 @app.route("/search")
 def search_page():

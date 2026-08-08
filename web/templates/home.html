@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block subtitle %}为你推荐{% endblock %}
+{% block content %}
+
+  <div class="section" style="padding-top:8px">
+    <h3 class="section-title">为你推荐 <span class="count" id="recommendNote"></span></h3>
+    <div class="comic-grid stagger" id="recommendGrid"></div>
+    <div id="recommendLoading" style="display:none;text-align:center;padding:22px;color:var(--text-3)">
+      <i class="fas fa-spinner fa-spin"></i> 正在生成兴趣推荐…
+    </div>
+    <div class="empty" id="recommendEmpty" style="display:none">
+      <div class="empty__icon"><i class="fas fa-wand-magic-sparkles"></i></div>
+      <h3>暂无推荐</h3>
+      <p>多搜几次，或去「设置 → 推荐」添加你感兴趣的作者 / 标签 / 名字</p>
+    </div>
+  </div>
+
+{% endblock %}

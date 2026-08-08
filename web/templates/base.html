@@ -14,7 +14,7 @@
       } catch (e) {}
     })();
   </script>
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=28">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=30">
   <link rel="icon" href="{{ url_for('static', filename='img/app_icon.png') }}">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 </head>
@@ -29,8 +29,11 @@
     </a>
 
     <nav class="app-nav">
+      <a class="nav-item" href="/home" data-route="home">
+        <i class="fas fa-home"></i><span>主页</span>
+      </a>
       <a class="nav-item" href="/search" data-route="search">
-        <i class="fas fa-compass"></i><span>搜索</span>
+        <i class="fas fa-magnifying-glass"></i><span>搜索</span>
       </a>
       <a class="nav-item" href="/library" data-route="library">
         <i class="fas fa-book-open"></i><span>阅读</span>
@@ -45,7 +48,7 @@
   <div class="toast-wrap" id="toastWrap"></div>
   <div id="modalRoot"></div>
 
-  <script src="{{ url_for('static', filename='js/app.js') }}?v=28"></script>
+  <script src="{{ url_for('static', filename='js/app.js') }}?v=30"></script>
   {% block scripts %}{% endblock %}
 </body>
 </html>

@@ -484,37 +484,41 @@ class JMCrawler:
             else:
                 missing.append(album_id)
 
-            if missing:
-                client = self._build_client()
-                max_workers = min(16, len(missing))
+        # 一次性批量补全缺失的详情。
+        # 注意：绝不能把下面整块放进上面的 for 循环里——否则每发现一个未缓存
+        # id 都会重跑整个线程池，造成 O(N^2) 重复请求（30 个结果 ≈ 465 次网络
+        # 请求），这是此前"开了代理能搜但极慢"的根因。
+        if missing:
+            client = self._build_client()
+            max_workers = min(16, len(missing))
 
-                with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                    futures = {
-                        executor.submit(self._fetch_search_detail, client, album_id): album_id
-                        for album_id in missing
-                    }
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = {
+                    executor.submit(self._fetch_search_detail, client, album_id): album_id
+                    for album_id in missing
+                }
 
-                    # 整体超时保护：JM 服务器偶发抽风/限流时，已完成的先采用，
-                    # 未完成的本次放弃（不阻塞搜索响应，下次再补），避免整批卡死。
-                    done, not_done = concurrent.futures.wait(futures, timeout=25)
-                    for future in done:
-                        album_id = futures[future]
-                        try:
-                            detail = future.result()
-                        except Exception as e:
-                            print(f"处理搜索详情失败 {album_id}: {e}")
-                            continue
+                # 整体超时保护：JM 服务器偶发抽风/限流时，已完成的先采用，
+                # 未完成的本次放弃（不阻塞搜索响应，下次再补），避免整批卡死。
+                done, not_done = concurrent.futures.wait(futures, timeout=25)
+                for future in done:
+                    album_id = futures[future]
+                    try:
+                        detail = future.result()
+                    except Exception as e:
+                        print(f"处理搜索详情失败 {album_id}: {e}")
+                        continue
 
-                        if detail:
-                            details[str(album_id)] = detail
-                            self.detail_cache[str(album_id)] = detail
-                    if not_done:
-                        print(f"搜索详情有 {len(not_done)} 个在超时内未完成，本次跳过（下次再补）")
+                    if detail:
+                        details[str(album_id)] = detail
+                        self.detail_cache[str(album_id)] = detail
+                if not_done:
+                    print(f"搜索详情有 {len(not_done)} 个在超时内未完成，本次跳过（下次再补）")
 
-                # 控制缓存体积（dict 保序，保留最近 3000 条，文件更小落盘更快）
-                if len(self.detail_cache) > 3500:
-                    self.detail_cache = dict(list(self.detail_cache.items())[-3000:])
-                self._save_detail_cache_async()
+            # 控制缓存体积（dict 保序，保留最近 3000 条，文件更小落盘更快）
+            if len(self.detail_cache) > 3500:
+                self.detail_cache = dict(list(self.detail_cache.items())[-3000:])
+            self._save_detail_cache_async()
 
         return details
 

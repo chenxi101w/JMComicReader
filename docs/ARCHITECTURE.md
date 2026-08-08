@@ -21,8 +21,8 @@ jmcomicreader-windows/
 │   ├── templates/              # Jinja2 页面（base/search/detail/...）
 │   └── static/
 │       ├── css/style.css       # 单文件样式（~880 行）
-│       └── js/app.js           # 单文件前端逻辑（~1670 行）
-├── assets/                     # 图标
+│       ├── js/app.js           # 单文件前端逻辑（~1670 行）
+│       └── img/                # 图标（app_icon.ico / app_icon.png）
 └── docs/                       # 文档与需求
 ```
 

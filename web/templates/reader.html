@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>阅读器 · JM Reader</title>
+  <script>
+    (function () {
+      try {
+        var t = localStorage.getItem('jm_theme');
+        if (!t) t = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        document.documentElement.setAttribute('data-theme', t);
+      } catch (e) {}
+    })();
+  </script>
+  <link rel="stylesheet" href="/static/css/style.css?v=28">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+</head>
+<body>
+  <div class="reader open" id="reader">
+    <div class="reader__bar">
+      <button id="closeReader" title="返回"><i class="fas fa-arrow-left"></i></button>
+      <div class="title" id="readerTitle">…</div>
+      <div class="reader__zoom">
+        <button id="zoomOut"><i class="fas fa-magnifying-glass-minus"></i></button>
+        <span class="v" id="zoomVal">100%</span>
+        <button id="zoomIn"><i class="fas fa-magnifying-glass-plus"></i></button>
+        <button id="readerSettings" title="阅读设置"><i class="fas fa-gear"></i></button>
+      </div>
+    </div>
+    <div class="reader__stage" id="readerStage">
+      <div class="empty"><div class="empty__icon"><i class="fas fa-spinner fa-spin"></i></div><h3>打开中…</h3></div>
+    </div>
+    <div class="reader__chap-trigger" id="chapTrigger" title="章节列表"></div>
+    <aside class="reader__chap-side" id="chapSide" style="display:none">
+      <div class="reader__chap-side__head">
+        <span>章节</span>
+        <span id="chapInfo" class="reader__chap-side__info">-</span>
+      </div>
+      <div class="reader__chap-list" id="chapList"></div>
+      <div class="reader__chap-side__nav">
+        <button class="btn" id="prevChapBtn"><i class="fas fa-backward-step"></i> 上一章</button>
+        <button class="btn" id="nextChapBtn">下一章 <i class="fas fa-forward-step"></i></button>
+      </div>
+    </aside>
+    <div class="reader__nav">
+      <button class="btn" id="prevBtn"><i class="fas fa-chevron-left"></i> 上一页</button>
+      <button class="btn btn--ghost" id="pageInfo" title="点击跳转页数" style="color:#aab3c7;align-self:center;font-size:13px;min-width:60px;text-align:center;padding:6px 10px">- / -</button>
+      <button class="btn" id="nextBtn">下一页 <i class="fas fa-chevron-right"></i></button>
+    </div>
+  </div>
+  <script src="/static/js/app.js?v=28"></script>
+</body>
+</html>

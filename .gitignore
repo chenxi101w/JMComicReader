@@ -1,0 +1,77 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+
+# 数据库
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# 打包产物（不需要提交）
+/build/
+/dist/
+/*.exe
+*.spec
+!JMComicReader.spec
+
+# 日志
+logs/
+*.log
+
+# 缓存与运行时数据
+TempCache/
+DownloadedComics/
+webview_data/
+cover_cache.json
+.app_url
+
+# 临时文件
+*.tmp
+*.temp
+.nul
+
+# PDF文件
+*.pdf
+
+# 编辑器
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 项目工作记忆（非源码）
+.workbuddy/
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+desktop.ini
+
+# 测试文件
+test_*.html
+pytest_cache/
+.ruff_cache/
+
+# 配置文件（包含敏感信息，打包时需要复制）
+# 注意：这里忽略的是源码目录下的开发时配置，打包时 build 脚本会单独处理。
+core/jm_option.yml
+
+# 历史构建产物 / 验证临时目录（devlogs 只保留文本日志、截图等轻量记录）
+devlogs/**/share_*/
+devlogs/**/verify_*/
+
+# 其他（打包时需要包含）
+# static/
+# templates/
+pdf/

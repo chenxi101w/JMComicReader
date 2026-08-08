@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block subtitle %}下载管理{% endblock %}
+{% block content %}
+
+  <div class="section">
+    <h3 class="section-title">
+      <i class="fas fa-layer-group" style="color:var(--accent)"></i> 批量下载
+      <span class="spacer"></span>
+    </h3>
+    <div class="batch-bar" id="batchBar">
+      <div class="batch-inputs" id="batchInputs"></div>
+      <button class="btn btn--sm" id="addBatchBox" title="添加一个输入框"><i class="fas fa-plus"></i></button>
+      <button class="btn btn--sm btn--ghost" id="clearBatch" title="清空">清空</button>
+      <span class="batch-count" id="batchCount">0 个</span>
+      <button class="btn btn--primary btn--sm" id="batchDownloadBtn">下载全部</button>
+    </div>
+  </div>
+
+  <div class="section">
+    <h3 class="section-title">
+      <i class="fas fa-bolt" style="color:var(--accent)"></i> 进行中
+      <span class="count" id="activeCount"></span>
+    </h3>
+    <div class="dl-list" id="activeList">
+      <div class="skeleton sk-card" style="height:96px"></div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h3 class="section-title">
+      <i class="fas fa-clock-rotate-left" style="color:var(--accent)"></i> 历史记录
+      <span class="count" id="historyCount"></span>
+      <span class="spacer"></span>
+      <button class="btn btn--sm btn--ghost" id="clearHistoryBtn" title="清空所有历史记录"><i class="fas fa-trash"></i> 清空</button>
+    </h3>
+    <div class="dl-list" id="historyList">
+      <div class="skeleton sk-card" style="height:64px"></div>
+    </div>
+  </div>
+
+{% endblock %}

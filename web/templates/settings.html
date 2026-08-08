@@ -1,0 +1,388 @@
+{% extends "base.html" %}
+{% block subtitle %}设置{% endblock %}
+{% block content %}
+
+  <div class="section">
+
+    <!-- 分类导航（一行一个块，点进去看具体设置） -->
+    <div class="settings-home" id="settingsHome">
+      <button class="cat-card" data-cat="download">
+        <span class="cat-card__icon"><i class="fas fa-download"></i></span>
+        <span class="cat-card__main">
+          <span class="cat-card__title">下载</span>
+          <span class="cat-card__desc">并发数 · 图片质量 · 自动清理 · 缓存管理</span>
+        </span>
+        <i class="fas fa-chevron-right cat-card__arrow"></i>
+      </button>
+
+      <button class="cat-card" data-cat="recommend">
+        <span class="cat-card__icon"><i class="fas fa-wand-magic-sparkles"></i></span>
+        <span class="cat-card__main">
+          <span class="cat-card__title">推荐</span>
+          <span class="cat-card__desc">兴趣推荐 · 推荐依据 · 自定义内容</span>
+        </span>
+        <i class="fas fa-chevron-right cat-card__arrow"></i>
+      </button>
+
+      <button class="cat-card" data-cat="search">
+        <span class="cat-card__icon"><i class="fas fa-magnifying-glass"></i></span>
+        <span class="cat-card__main">
+          <span class="cat-card__title">搜索</span>
+          <span class="cat-card__desc">结果上限 · 标签显示 · 屏蔽 / 同义词</span>
+        </span>
+        <i class="fas fa-chevron-right cat-card__arrow"></i>
+      </button>
+
+      <button class="cat-card" data-cat="search-prefs">
+        <span class="cat-card__icon"><i class="fas fa-heart"></i></span>
+        <span class="cat-card__main">
+          <span class="cat-card__title">搜索偏好库</span>
+          <span class="cat-card__desc">历史 / 标签 / 作者 · 误删可恢复</span>
+        </span>
+        <i class="fas fa-chevron-right cat-card__arrow"></i>
+      </button>
+
+      <button class="cat-card" data-cat="appearance">
+        <span class="cat-card__icon"><i class="fas fa-palette"></i></span>
+        <span class="cat-card__main">
+          <span class="cat-card__title">外观</span>
+          <span class="cat-card__desc">深色模式 · 隐藏页数章数</span>
+        </span>
+        <i class="fas fa-chevron-right cat-card__arrow"></i>
+      </button>
+
+      <button class="cat-card" data-cat="network">
+        <span class="cat-card__icon"><i class="fas fa-network-wired"></i></span>
+        <span class="cat-card__main">
+          <span class="cat-card__title">网络 / 代理</span>
+          <span class="cat-card__desc">代理下载开关与地址</span>
+        </span>
+        <i class="fas fa-chevron-right cat-card__arrow"></i>
+      </button>
+
+      <button class="cat-card" data-cat="about">
+        <span class="cat-card__icon"><i class="fas fa-circle-info"></i></span>
+        <span class="cat-card__main">
+          <span class="cat-card__title">关于</span>
+          <span class="cat-card__desc">版本与说明</span>
+        </span>
+        <i class="fas fa-chevron-right cat-card__arrow"></i>
+      </button>
+    </div>
+
+    <!-- 钻取详情（点分类后展开） -->
+    <div class="settings-detail" id="settingsDetail" hidden>
+      <button class="drill-back" id="drillBack"><i class="fas fa-arrow-left"></i> 返回</button>
+
+      <div class="drill-panel" data-cat="download">
+        <h3 class="section-title">下载设置</h3>
+        <div class="settings-list">
+          <div class="setting-row">
+            <div class="setting-row__icon"><i class="fas fa-gauge-high"></i></div>
+            <div class="setting-row__main">
+              <div class="setting-row__label">同时下载任务数</div>
+              <div class="setting-row__desc">数值越高越快，但更占带宽</div>
+            </div>
+            <div class="setting-row__control" style="display:flex;align-items:center;gap:10px">
+              <input type="range" class="slider" id="maxConcurrent" min="1" max="10" value="3">
+              <span id="maxConcurrentVal" style="min-width:22px;text-align:center;font-weight:600">3</span>
+            </div>
+          </div>
+          <div class="setting-row">
+            <div class="setting-row__icon"><i class="fas fa-image"></i></div>
+            <div class="setting-row__main">
+              <div class="setting-row__label">图片质量</div>
+              <div class="setting-row__desc">原图更清晰，压缩更省空间</div>
+            </div>
+            <div class="setting-row__control">
+              <select id="imageQuality" class="btn btn--sm btn--ghost" style="padding:6px 10px">
+                <option value="original">原图</option>
+                <option value="high">高</option>
+                <option value="medium">中</option>
+                <option value="low">低</option>
+              </select>
+            </div>
+          </div>
+          <div class="setting-row">
+            <div class="setting-row__icon"><i class="fas fa-broom"></i></div>
+            <div class="setting-row__main">
+              <div class="setting-row__label">自动清理缓存</div>
+              <div class="setting-row__desc">下载完成后自动清理临时文件</div>
+            </div>
+            <div class="setting-row__control">
+              <label class="switch"><input type="checkbox" id="autoCleanup"><span class="track"></span></label>
+            </div>
+          </div>
+          <div class="setting-row">
+            <div class="setting-row__icon"><i class="fas fa-database"></i></div>
+            <div class="setting-row__main">
+              <div class="setting-row__label">当前缓存占用</div>
+              <div class="setting-row__desc" id="cacheSize">…</div>
+            </div>
+            <div class="setting-row__control">
+              <button class="btn btn--sm btn--danger" id="clearCacheBtn"><i class="fas fa-trash"></i> 清理</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="drill-panel" data-cat="recommend">
+        <h3 class="section-title">自动推荐</h3>
+        <div class="settings-list">
+          <div class="setting-row">
+            <div class="setting-row__icon"><i class="fas fa-power-off"></i></div>
+            <div class="setting-row__main">
+              <div class="setting-row__label">启用自动推荐</div>
+              <div class="setting-row__desc">打开搜索页时，根据兴趣自动推荐漫画</div>
+            </div>
+            <div class="setting-row__control">
+              <label class="switch"><input type="checkbox" id="recommendEnabled" checked><span class="track"></span></label>
+            </div>
+          </div>
+          <div class="setting-row">
+            <div class="setting-row__icon"><i class="fas fa-layer-group"></i></div>
+            <div class="setting-row__main">
+              <div class="setting-row__label">推荐数量</div>
+              <div class="setting-row__desc">搜索页推荐区最多展示几条（4–60）</div>
+            </div>
+            <div class="setting-row__control">
+              <input type="number" class="search-input" id="recommendCount" value="20" min="4" max="60" step="2" style="width:80px;padding:6px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface-2)">
+            </div>
+          </div>
+
+          <div class="subsection-title">推荐依据</div>
+          <div class="setting-row" style="flex-direction:column;align-items:stretch;gap:10px">
+            <div class="setting-row__desc">点一下高亮表示采用该依据，再点变暗表示不采用（与标签按钮一致）。</div>
+            <div id="recommendBasis" class="chip-row" style="display:flex;gap:8px;flex-wrap:wrap">
+              <button class="basis-chip" data-basis="keyword">常搜索</button>
+              <button class="basis-chip" data-basis="author">作者</button>
+              <button class="basis-chip" data-basis="tag">标签</button>
+            </div>
+          </div>
+
+          <div class="subsection-title">自定义推荐内容</div>
+          <div class="setting-row" style="flex-direction:column;align-items:stretch;gap:10px">
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+              <select id="recommendCustomType" class="btn btn--sm btn--ghost" style="padding:6px 10px">
+                <option value="name">名字</option>
+                <option value="tag">标签</option>
+                <option value="author">作者</option>
+              </select>
+              <input id="recommendCustomValue" class="search-input" placeholder="输入名字 / 标签 / 作者" style="flex:1;min-width:140px;padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface-2)">
+              <button class="btn btn--sm btn--primary" id="recommendCustomAdd"><i class="fas fa-plus"></i> 添加</button>
+            </div>
+            <div id="recommendCustomList" class="manage-list"></div>
+          </div>
+
+          <div class="subsection-title">当前推荐参数</div>
+          <div class="setting-row" style="flex-direction:column;align-items:stretch;gap:8px">
+            <div class="setting-row__desc" id="recommendParamInfo">—</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="drill-panel" data-cat="search">
+        <h3 class="section-title">搜索</h3>
+        <div class="settings-list">
+          <div class="setting-row">
+            <div class="setting-row__icon"><i class="fas fa-list-ol"></i></div>
+            <div class="setting-row__main">
+              <div class="setting-row__label">搜索结果上限</div>
+              <div class="setting-row__desc">标签/联合搜索最多返回几条（默认80）</div>
+            </div>
+            <div class="setting-row__control">
+              <input type="number" class="search-input" id="searchResultLimit" value="80" min="10" max="500" step="10" style="width:80px;padding:6px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface-2)">
+            </div>
+          </div>
+          <div class="setting-row">
+            <div class="setting-row__icon"><i class="fas fa-sort-amount-down"></i></div>
+            <div class="setting-row__main">
+              <div class="setting-row__label">搜索优先级</div>
+              <div class="setting-row__desc">同义词一起搜时，优先把"你输入的名字"排前面（默认开）</div>
+            </div>
+            <div class="setting-row__control">
+              <select id="searchPriority" class="search-input" style="padding:6px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface-2)">
+                <option value="input">优先输入的名字</option>
+                <option value="equal">同义词同等</option>
+              </select>
+            </div>
+          </div>
+          <div class="setting-row">
+            <div class="setting-row__icon"><i class="fas fa-tags"></i></div>
+            <div class="setting-row__main">
+              <div class="setting-row__label">搜索结果标签显示数量</div>
+              <div class="setting-row__desc">0 = 显示全部标签；填数字则最多显示几个（超出显示 +N）</div>
+            </div>
+            <div class="setting-row__control">
+              <input type="number" class="search-input" id="searchTagLimit" value="0" min="0" max="50" step="1" style="width:80px;padding:6px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface-2)">
+            </div>
+          </div>
+
+          <div class="subsection-title">屏蔽管理</div>
+          <div class="setting-row">
+            <div class="setting-row__icon"><i class="fas fa-message-slash"></i></div>
+            <div class="setting-row__main">
+              <div class="setting-row__label">拉黑后提示本地命中</div>
+              <div class="setting-row__desc">屏蔽作品/作者后，若本地书架存在命中作品则弹出提示</div>
+            </div>
+            <div class="setting-row__control">
+              <label class="switch"><input type="checkbox" id="showBlockHits"><span class="track"></span></label>
+            </div>
+          </div>
+          <div class="setting-row" style="flex-direction:column;align-items:stretch;gap:12px">
+            <div style="display:flex;gap:8px">
+              <input class="search-input" id="blockInput" placeholder="输入作者名、JM 号或标签" style="flex:1;padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface-2)">
+              <select id="blockType" class="btn btn--sm btn--ghost" style="padding:6px 10px"><option value="author">作者</option><option value="work">作品(JM号)</option><option value="tag">标签</option></select>
+              <button class="btn btn--sm btn--danger" id="blockAddBtn"><i class="fas fa-ban"></i> 拉黑</button>
+            </div>
+          </div>
+          <button class="btn btn--sm btn--primary" id="blockPageBtn" style="align-self:flex-start;margin-top:4px"><i class="fas fa-list"></i> 查看 / 管理屏蔽列表</button>
+
+          <div class="subsection-title">同义词 / 别名</div>
+          <div class="setting-row" style="flex-direction:column;align-items:stretch;gap:12px">
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+              <select id="aliasType" class="btn btn--sm btn--ghost" style="padding:6px 10px"><option value="tag">标签</option><option value="author">作者</option></select>
+              <input id="aliasCanon" class="search-input" placeholder="标准词 canonical" style="flex:1;min-width:120px;padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface-2)">
+              <input id="aliasVariants" class="search-input" placeholder="同义词，逗号分隔" style="flex:1;min-width:140px;padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface-2)">
+              <button class="btn btn--sm btn--primary" id="aliasAddBtn"><i class="fas fa-plus"></i> 添加</button>
+            </div>
+            <div id="aliasList" class="manage-list"></div>
+            <button class="btn btn--sm btn--ghost" id="aliasSuggestBtn"><i class="fas fa-lightbulb"></i> 获取智能建议</button>
+            <div id="aliasSuggest" class="manage-list" style="display:none"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="drill-panel" data-cat="search-prefs">
+        <h3 class="section-title pref-lib-title" id="prefLibToggle" role="button" tabindex="0" title="展开 / 收起">
+          <i class="fas fa-heart"></i> 搜索偏好库
+          <span class="pref-lib-sub">误删可恢复 · 可编辑删减</span>
+          <i class="fas fa-chevron-down pref-lib-caret"></i>
+        </h3>
+        <div class="setting-row__desc" style="margin:2px 0 12px">管理搜索历史 / 收藏标签 / 收藏作者。<b>误删可恢复</b>——删除只移入回收站，下方「已删除」区可一键恢复。这里编辑的内容会同步到搜索栏的展示。</div>
+        <div class="pref-lib-body" id="prefLibBody" hidden>
+          <div class="pref-lib-block" data-cat="history">
+            <div class="pref-lib-block__head"><i class="fas fa-clock"></i> 搜索历史</div>
+            <div class="pref-lib-addrow">
+              <input class="search-input" data-add-input placeholder="输入历史词">
+              <button class="btn btn--sm btn--primary" data-add-btn><i class="fas fa-plus"></i></button>
+            </div>
+            <div class="pref-lib-list" data-list></div>
+            <div class="pref-lib-trash" data-trash hidden></div>
+          </div>
+          <div class="pref-lib-block" data-cat="tags">
+            <div class="pref-lib-block__head"><i class="fas fa-tag"></i> 收藏标签</div>
+            <div class="pref-lib-addrow">
+              <input class="search-input" data-add-input placeholder="输入标签">
+              <button class="btn btn--sm btn--primary" data-add-btn><i class="fas fa-plus"></i></button>
+            </div>
+            <div class="pref-lib-list" data-list></div>
+            <div class="pref-lib-trash" data-trash hidden></div>
+          </div>
+          <div class="pref-lib-block" data-cat="authors">
+            <div class="pref-lib-block__head"><i class="fas fa-user-pen"></i> 收藏作者</div>
+            <div class="pref-lib-addrow">
+              <input class="search-input" data-add-input placeholder="输入作者名">
+              <button class="btn btn--sm btn--primary" data-add-btn><i class="fas fa-plus"></i></button>
+            </div>
+            <div class="pref-lib-list" data-list></div>
+            <div class="pref-lib-trash" data-trash hidden></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="drill-panel" data-cat="appearance">
+        <h3 class="section-title">外观</h3>
+        <div class="settings-list">
+          <div class="setting-row">
+            <div class="setting-row__icon"><i class="fas fa-moon"></i></div>
+            <div class="setting-row__main">
+              <div class="setting-row__label">深色模式</div>
+              <div class="setting-row__desc">切换浅色 / 深色主题</div>
+            </div>
+            <div class="setting-row__control">
+              <button class="theme-toggle" id="themeToggle" title="切换主题" aria-label="切换主题">
+                <i class="fas fa-moon"></i>
+              </button>
+            </div>
+          </div>
+          <div class="setting-row">
+            <div class="setting-row__icon"><i class="fas fa-eye-slash"></i></div>
+            <div class="setting-row__main">
+              <div class="setting-row__label">隐藏页数/章数</div>
+              <div class="setting-row__desc">漫画卡片上不再显示「XX 页 · XX 章」</div>
+            </div>
+            <div class="setting-row__control">
+              <label class="switch"><input type="checkbox" id="hidePageChapter"><span class="track"></span></label>
+            </div>
+          </div>
+          <div class="setting-row">
+            <div class="setting-row__icon"><i class="fas fa-book-open"></i></div>
+            <div class="setting-row__main">
+              <div class="setting-row__label">章节边界提醒</div>
+              <div class="setting-row__desc">阅读到最后一页/第一页且没有下一章/上一章时，显示 3 秒文字提醒</div>
+            </div>
+            <div class="setting-row__control">
+              <label class="switch"><input type="checkbox" id="readerChapterToast" checked><span class="track"></span></label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="drill-panel" data-cat="network">
+        <h3 class="section-title">网络 / 代理</h3>
+        <div class="settings-list">
+          <div class="setting-row">
+            <div class="setting-row__icon"><i class="fas fa-network-wired"></i></div>
+            <div class="setting-row__main">
+              <div class="setting-row__label">启用代理下载</div>
+              <div class="setting-row__desc">当直连漫画站点超时 / 失败时，可走代理访问</div>
+            </div>
+            <div class="setting-row__control">
+              <label class="switch"><input type="checkbox" id="proxyEnabled"><span class="track"></span></label>
+            </div>
+          </div>
+          <div class="setting-row" style="flex-direction:column;align-items:stretch;gap:10px">
+            <div style="display:flex;align-items:center;gap:14px">
+              <div class="setting-row__icon"><i class="fas fa-server"></i></div>
+              <div class="setting-row__main" style="flex:1">
+                <div class="setting-row__label">代理地址</div>
+                <div class="setting-row__desc">如 http://127.0.0.1:7890 或 socks5://127.0.0.1:1080</div>
+              </div>
+            </div>
+            <input class="search-input" id="proxyUrl" placeholder="留空则使用系统代理" style="padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface-2)">
+          </div>
+        </div>
+      </div>
+
+      <div class="drill-panel" data-cat="about">
+        <h3 class="section-title">关于</h3>
+        <div class="settings-list">
+          <div class="setting-row">
+            <div class="setting-row__icon"><i class="fas fa-circle-info"></i></div>
+            <div class="setting-row__main">
+              <div class="setting-row__label">JM Reader</div>
+              <div class="setting-row__desc">版本 <span id="appVersion" data-v="{{ app_version }}">{{ app_version }}</span> · 本地漫画阅读器</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="drill-panel" data-cat="block">
+        <h3 class="section-title">屏蔽管理</h3>
+        <div class="settings-list">
+          <div class="setting-row">
+            <div class="setting-row__icon"><i class="fas fa-ban"></i></div>
+            <div class="setting-row__main">
+              <div class="setting-row__label">已屏蔽的作者的作品 / 作品</div>
+              <div class="setting-row__desc">这里列出所有已屏蔽项，点右侧 × 即可取消屏蔽（恢复显示）。已在本地书架下载的作品会显示标题。</div>
+            </div>
+          </div>
+          <div id="blockList"></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+{% endblock %}

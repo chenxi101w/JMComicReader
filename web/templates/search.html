@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% block subtitle %}搜漫画 · 下漫画{% endblock %}
+{% block content %}
+
+  <div class="section" style="padding-top:8px">
+    <div class="search-hero" style="padding:0">
+      <div class="search-box-wrap">
+        <div class="search-box sb-split">
+          <div class="sb-row">
+            <div class="sb-kw">
+              <i class="fas fa-search"></i>
+              <input class="search-input" id="searchInput" placeholder="关键词 / 作者 / JM 号…" autocomplete="off">
+              <button class="sb-clear" id="clearKwBtn" title="清空关键词"><i class="fas fa-times"></i></button>
+              <button class="btn btn--primary" id="searchBtn">搜索</button>
+              <button class="btn btn--ghost btn--sm" id="clearTagsBtn" title="清空已选标签"><i class="fas fa-tags"></i><i class="fas fa-times" style="margin-left:4px;opacity:.7"></i></button>
+            </div>
+          </div>
+          <div class="sb-row">
+            <div class="sb-tag" id="sbTagArea" title="点击空白处展开 历史 / 标签 / 作者">
+              <div class="qtags" id="quickTags"></div>
+            </div>
+          </div>
+        </div>
+        <div class="search-drop" id="searchDrop" hidden>
+          <div class="search-drop__body">
+            <div class="sd-col" data-col="history">
+              <div class="sd-head"><span><i class="fas fa-clock"></i> 历史</span><button class="sd-clear" id="shClear">清空</button></div>
+              <div class="sd-list" id="searchHistoryList"></div>
+              <div class="sd-empty" id="searchHistoryEmpty">还没有搜索历史</div>
+            </div>
+            <div class="sd-col" data-col="tags">
+              <div class="sd-head">
+                <span><i class="fas fa-tag"></i> 标签</span>
+                <div class="td-mode">
+                  <button class="td-mode-btn active" data-mode="or">或</button>
+                  <button class="td-mode-btn" data-mode="and">且</button>
+                </div>
+              </div>
+              <div class="sd-subhead">
+                <span>收藏但未选</span>
+                <select id="favTagHighlight" title="收藏但未选中的标签如何高亮">
+                  <option value="same">同高亮</option>
+                  <option value="dim">淡亮</option>
+                  <option value="off">不亮</option>
+                </select>
+              </div>
+              <div class="sd-list" id="favTagsList"></div>
+              <div class="sd-empty" id="favTagsEmpty">从漫画详情页或搜索结果点一下标签即可收藏</div>
+            </div>
+            <div class="sd-col" data-col="authors">
+              <div class="sd-head"><span><i class="fas fa-user-pen"></i> 作者</span><button class="sd-clear" id="favAuthorsClear">清空</button></div>
+              <div class="sd-list" id="favAuthorsList"></div>
+              <div class="sd-empty" id="favAuthorsEmpty">点一下漫画作者即可收藏</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section recommend-section" id="recommendSection" style="padding-top:4px">
+    <h3 class="section-title">为你推荐 <span class="count" id="recommendNote"></span></h3>
+    <div class="comic-grid stagger" id="recommendGrid"></div>
+    <div id="recommendLoading" style="display:none;text-align:center;padding:22px;color:var(--text-3)">
+      <i class="fas fa-spinner fa-spin"></i> 正在生成兴趣推荐…
+    </div>
+    <div class="empty" id="recommendEmpty" style="display:none">
+      <div class="empty__icon"><i class="fas fa-wand-magic-sparkles"></i></div>
+      <h3>暂无推荐</h3>
+      <p>多搜几次，或去「设置 → 推荐」添加你感兴趣的作者 / 标签 / 名字</p>
+    </div>
+  </div>
+
+  <div class="section" style="padding-top:4px">
+    <h3 class="section-title">搜索结果 <span class="count" id="resultCount"></span><span class="search-cond" id="searchCond" style="display:none"></span></h3>
+    <div class="search-filters">
+      <label class="filter-group">
+        <span class="filter-label">排序</span>
+        <select id="sortBy" class="filter-select">
+          <option value="mr">最新</option>
+          <option value="mv">浏览量</option>
+          <option value="mp">收藏量</option>
+          <option value="tr">标题</option>
+        </select>
+      </label>
+      <label class="filter-group">
+        <span class="filter-label">时间</span>
+        <select id="timeRange" class="filter-select">
+          <option value="a">全部</option>
+          <option value="t">今天</option>
+          <option value="w">本周</option>
+          <option value="m">本月</option>
+        </select>
+      </label>
+      <label class="filter-group">
+        <span class="filter-label">方向</span>
+        <select id="sortDir" class="filter-select">
+          <option value="desc">降序</option>
+          <option value="asc">升序</option>
+        </select>
+      </label>
+    </div>
+    <div class="comic-grid stagger" id="comicGrid"></div>
+    <div id="loading" style="display:none;text-align:center;padding:30px;color:var(--text-3)">
+      <i class="fas fa-spinner fa-spin"></i> 搜索中…
+    </div>
+    <div id="loadMore" style="display:none;text-align:center;padding:14px">
+      <button class="btn">加载更多</button>
+    </div>
+    <div class="empty" id="emptyState" style="display:none">
+      <div class="empty__icon"><i class="fas fa-search"></i></div>
+      <h3>没有结果</h3>
+      <p>换个关键词或 JM 号试试</p>
+    </div>
+  </div>
+
+  <button class="back-to-top" id="backToTop" title="回到顶部" hidden><i class="fas fa-arrow-up"></i></button>
+
+{% endblock %}

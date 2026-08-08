@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>{% block title %}JM Reader · 漫画阅读器{% endblock %}</title>
+  <script>
+    /* 主题防闪烁：在首屏渲染前应用，避免 light→dark 跳变 */
+    (function () {
+      try {
+        var t = localStorage.getItem('jm_theme');
+        if (!t) t = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        document.documentElement.setAttribute('data-theme', t);
+      } catch (e) {}
+    })();
+  </script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=28">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+</head>
+<body>
+  <div class="app">
+    <main class="app-main page-enter" id="appMain">
+      {% block content %}{% endblock %}
+    </main>
+
+    <a class="download-fab" href="/downloads" title="下载管理" aria-label="下载管理">
+      <i class="fas fa-download"></i>
+    </a>
+
+    <nav class="app-nav">
+      <a class="nav-item" href="/search" data-route="search">
+        <i class="fas fa-compass"></i><span>搜索</span>
+      </a>
+      <a class="nav-item" href="/library" data-route="library">
+        <i class="fas fa-book-open"></i><span>阅读</span>
+      </a>
+      <a class="nav-item" href="/settings" data-route="settings">
+        <i class="fas fa-gear"></i><span>设置</span>
+      </a>
+    </nav>
+  </div>
+
+  <button class="global-back" id="globalBack" title="返回"><i class="fas fa-arrow-left"></i></button>
+  <div class="toast-wrap" id="toastWrap"></div>
+  <div id="modalRoot"></div>
+
+  <script src="{{ url_for('static', filename='js/app.js') }}?v=28"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

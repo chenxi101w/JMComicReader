@@ -152,17 +152,34 @@
           </div>
 
           <div class="subsection-title">自定义推荐内容</div>
-          <div class="setting-row" style="flex-direction:column;align-items:stretch;gap:10px">
-            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-              <select id="recommendCustomType" class="btn btn--sm btn--ghost" style="padding:6px 10px">
-                <option value="name">名字</option>
-                <option value="tag">标签</option>
-                <option value="author">作者</option>
-              </select>
-              <input id="recommendCustomValue" class="search-input" placeholder="输入名字 / 标签 / 作者" style="flex:1;min-width:140px;padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface-2)">
-              <button class="btn btn--sm btn--primary" id="recommendCustomAdd"><i class="fas fa-plus"></i> 添加</button>
+          <div class="rc-blocks" id="recommendCustomBlocks">
+            <div class="rc-block" data-type="name">
+              <div class="sd-head"><span><i class="fas fa-search"></i> 关键字</span><button class="sd-clear" data-clear>清空</button></div>
+              <div class="pref-lib-addrow">
+                <input class="search-input" data-add-input placeholder="输入关键字">
+                <button class="btn btn--sm btn--primary" data-add-btn><i class="fas fa-plus"></i></button>
+              </div>
+              <div class="sd-list" data-list></div>
+              <div class="sd-empty" data-empty>添加关键字作为推荐依据</div>
             </div>
-            <div id="recommendCustomList" class="manage-list"></div>
+            <div class="rc-block" data-type="tag">
+              <div class="sd-head"><span><i class="fas fa-tag"></i> 标签</span><button class="sd-clear" data-clear>清空</button></div>
+              <div class="pref-lib-addrow">
+                <input class="search-input" data-add-input placeholder="输入标签">
+                <button class="btn btn--sm btn--primary" data-add-btn><i class="fas fa-plus"></i></button>
+              </div>
+              <div class="sd-list" data-list></div>
+              <div class="sd-empty" data-empty>添加标签作为推荐依据</div>
+            </div>
+            <div class="rc-block" data-type="author">
+              <div class="sd-head"><span><i class="fas fa-user-pen"></i> 作者</span><button class="sd-clear" data-clear>清空</button></div>
+              <div class="pref-lib-addrow">
+                <input class="search-input" data-add-input placeholder="输入作者名">
+                <button class="btn btn--sm btn--primary" data-add-btn><i class="fas fa-plus"></i></button>
+              </div>
+              <div class="sd-list" data-list></div>
+              <div class="sd-empty" data-empty>添加作者作为推荐依据</div>
+            </div>
           </div>
 
           <div class="subsection-title">当前推荐参数</div>

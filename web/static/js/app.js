@@ -1823,7 +1823,7 @@ function initSettings() {
   const basisChipEls = document.querySelectorAll('#recommendBasis .basis-chip');
   const recommendCountEl = document.getElementById('recommendCount');
   const recommendEnabledEl = document.getElementById('recommendEnabled');
-  const recommendCustomListEl = document.getElementById('recommendCustomList');
+  const recommendCustomBlocksEl = document.getElementById('recommendCustomBlocks');
   const recommendParamInfoEl = document.getElementById('recommendParamInfo');
 
   function parseJsonList(str, fallback) {
@@ -1833,26 +1833,65 @@ function initSettings() {
   function renderRecommendParamInfo() {
     if (!recommendParamInfoEl) return;
     const basisLabels = { keyword: '常搜索', author: '作者', tag: '标签' };
+    const customTypeLabels = { name: '关键字', tag: '标签', author: '作者' };
     const basisTxt = recommendBasis.map(b => basisLabels[b] || b).join('、') || '无';
     const customTxt = recommendCustom.length
-      ? recommendCustom.map(c => `${c.type === 'name' ? '名字' : c.type === 'tag' ? '标签' : '作者'}:${c.value}`).join('，')
+      ? recommendCustom.map(c => `${customTypeLabels[c.type] || c.type}:${c.value}`).join('，')
       : '无';
     const enabled = recommendEnabledEl ? recommendEnabledEl.checked : true;
     recommendParamInfoEl.textContent = `启用：${enabled ? '是' : '否'} · 数量：${recommendCountEl ? recommendCountEl.value : '?'} · 依据：${basisTxt} · 自定义：${customTxt}`;
   }
-  function renderRecommendCustom() {
-    if (!recommendCustomListEl) return;
-    if (!recommendCustom.length) { recommendCustomListEl.innerHTML = `<div class="manage-empty">还没有自定义推荐内容</div>`; return; }
-    const typeLabels = { name: '名字', tag: '标签', author: '作者' };
-    recommendCustomListEl.className = 'manage-list';
-    recommendCustomListEl.innerHTML = recommendCustom.map((c, i) =>
-      `<span class="rc-chip">
-        <span class="rc-chip__type">${typeLabels[c.type] || c.type}</span>
-        <span class="rc-chip__name">${escapeHtml(c.value)}</span>
-        <button class="rc-chip__del" data-i="${i}" title="删除"><i class="fas fa-times"></i></button>
-      </span>`).join('');
-    recommendCustomListEl.querySelectorAll('.rc-chip__del').forEach(b => {
-      b.onclick = () => { recommendCustom.splice(parseInt(b.dataset.i, 10), 1); renderRecommendCustom(); renderRecommendParamInfo(); saveRecommendSettings(false); };
+  function renderRecommendCustomBlocks() {
+    if (!recommendCustomBlocksEl) return;
+    recommendCustomBlocksEl.querySelectorAll('.rc-block').forEach(block => {
+      const type = block.dataset.type;
+      const listEl = block.querySelector('[data-list]');
+      const emptyEl = block.querySelector('[data-empty]');
+      const items = recommendCustom.map((c, globalIdx) => ({ ...c, globalIdx })).filter(c => c.type === type);
+      if (!items.length) {
+        listEl.innerHTML = '';
+        emptyEl.hidden = false;
+      } else {
+        emptyEl.hidden = true;
+        listEl.innerHTML = items.map(c =>
+          `<span class="fav-tag">
+            <span>${escapeHtml(c.value)}</span>
+            <button class="ft-del" data-idx="${c.globalIdx}" title="删除"><i class="fas fa-times"></i></button>
+          </span>`).join('');
+        listEl.querySelectorAll('.ft-del').forEach(b => {
+          b.onclick = () => {
+            const idx = parseInt(b.dataset.idx, 10);
+            if (idx >= 0 && idx < recommendCustom.length) {
+              recommendCustom.splice(idx, 1);
+              renderRecommendCustomBlocks(); renderRecommendParamInfo(); saveRecommendSettings(false);
+            }
+          };
+        });
+      }
+    });
+  }
+  function bindRecommendCustomBlocks() {
+    if (!recommendCustomBlocksEl) return;
+    recommendCustomBlocksEl.querySelectorAll('.rc-block').forEach(block => {
+      const type = block.dataset.type;
+      const input = block.querySelector('[data-add-input]');
+      const addBtn = block.querySelector('[data-add-btn]');
+      const clearBtn = block.querySelector('[data-clear]');
+      function add() {
+        const val = input.value.trim();
+        if (!val) { toast('请输入内容', 'warn'); return; }
+        if (recommendCustom.some(c => c.type === type && c.value === val)) { toast('已添加过', 'warn'); return; }
+        recommendCustom.push({ type, value: val });
+        input.value = '';
+        renderRecommendCustomBlocks(); renderRecommendParamInfo(); saveRecommendSettings(false);
+      }
+      addBtn.onclick = add;
+      input.addEventListener('keydown', e => { if (e.key === 'Enter') add(); });
+      clearBtn.onclick = () => {
+        if (!recommendCustom.some(c => c.type === type)) return;
+        recommendCustom = recommendCustom.filter(c => c.type !== type);
+        renderRecommendCustomBlocks(); renderRecommendParamInfo(); saveRecommendSettings(false);
+      };
     });
   }
   function renderRecommendBasis() {
@@ -1871,7 +1910,7 @@ function initSettings() {
     renderRecommendParamInfo();
   }
   // 初始默认值渲染
-  renderRecommendBasis(); renderRecommendCustom(); renderRecommendParamInfo();
+  renderRecommendBasis(); renderRecommendCustomBlocks(); bindRecommendCustomBlocks(); renderRecommendParamInfo();
   // 从后端读取已保存配置覆盖默认
   api('GET', '/api/settings').then(r => {
     if (!r.success) return; const s = r.data || {};
@@ -1880,7 +1919,7 @@ function initSettings() {
     const basis = parseJsonList(s.recommend_basis, null);
     recommendBasis = (basis && basis.length) ? basis.filter(b => ['keyword', 'author', 'tag'].includes(b)) : ['keyword', 'author', 'tag'];
     recommendCustom = parseJsonList(s.recommend_custom, []);
-    renderRecommendBasis(); renderRecommendCustom(); renderRecommendParamInfo();
+    renderRecommendBasis(); renderRecommendCustomBlocks(); renderRecommendParamInfo();
   });
   // 依据 chip 点击高亮/变暗
   basisChipEls.forEach(el => {
@@ -1895,18 +1934,6 @@ function initSettings() {
   });
   if (recommendEnabledEl) recommendEnabledEl.addEventListener('change', () => { renderRecommendParamInfo(); saveRecommendSettings(false); });
   if (recommendCountEl) recommendCountEl.addEventListener('change', () => { renderRecommendParamInfo(); saveRecommendSettings(false); });
-  const recommendCustomAddBtn = document.getElementById('recommendCustomAdd');
-  if (recommendCustomAddBtn) recommendCustomAddBtn.onclick = () => {
-    const typeEl = document.getElementById('recommendCustomType');
-    const valEl = document.getElementById('recommendCustomValue');
-    const type = typeEl ? typeEl.value : 'name';
-    const val = valEl ? valEl.value.trim() : '';
-    if (!val) { toast('请输入内容', 'warn'); return; }
-    if (recommendCustom.some(c => c.type === type && c.value === val)) { toast('已添加过', 'warn'); return; }
-    recommendCustom.push({ type, value: val });
-    if (valEl) valEl.value = '';
-    renderRecommendCustom(); renderRecommendParamInfo(); saveRecommendSettings(false);
-  };
 }
 
 /* ═══════════════════════════════════════════════════════

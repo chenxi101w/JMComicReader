@@ -444,6 +444,29 @@ img { display: block; max-width: 100%; }
 .rc-chip__del { width: 20px; height: 20px; border-radius: 50%; border: none; background: transparent; color: var(--text-3); display: grid; place-items: center; font-size: 11px; flex: 0 0 auto; cursor: pointer; transition: all .15s var(--ease); }
 .rc-chip__del:hover { background: color-mix(in srgb, var(--danger) 16%, transparent); color: var(--danger); }
 
+/* ── 推荐设置：自定义内容三区块（关键字 / 标签 / 作者）── */
+.rc-blocks {
+  display: flex;
+  min-height: 200px;
+  max-height: 360px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--surface);
+}
+.rc-block {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border);
+  padding: 12px;
+}
+.rc-block:last-child { border-right: none; }
+.rc-block .pref-lib-addrow { margin-bottom: 10px; }
+.rc-block .pref-lib-addrow .search-input { padding: 7px 10px; font-size: 13px; }
+.rc-block .sd-list { flex: 1; }
+
 /* ── 漫画卡片标签 ─────────────────────────────────────── */
 .comic-card__tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 7px; }
 .comic-card__tag {
@@ -818,6 +841,9 @@ img { display: block; max-width: 100%; }
   .search-drop__body { flex-direction: column; max-height: 60vh; }
   .sd-col { border-right: none; border-bottom: 1px solid var(--border); max-height: 200px; }
   .sd-col:last-child { border-bottom: none; }
+  .rc-blocks { flex-direction: column; max-height: none; }
+  .rc-block { border-right: none; border-bottom: 1px solid var(--border); max-height: 220px; }
+  .rc-block:last-child { border-bottom: none; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }

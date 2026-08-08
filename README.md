@@ -25,11 +25,12 @@
 
 ### 方式一：绿色版（推荐，零配置）
 
-1. 前往仓库 **[Releases](https://github.com/chenxi101w/JMComicReader-windows/releases)** 页面
-2. 下载 `JMComicReader_vX.Y.Z_portable.*`
-   - 因 GitHub 单附件限制 25MB，超过时会拆成 **`.z01` + `.zip`** 两个分卷，请下载到**同一文件夹**
-3. 用 **7-Zip** 右键 `.z01` → **「解压到」** 即可自动合并分卷（或用 `copy /b *.z01 + *.zip full.zip` 合并后解压）
-4. 双击 `JMComicReader.exe` 即可使用
+1. 获取 `JMComicReader_vX.Y.Z_portable.zip`（**单一完整包**，约 35MB，已含程序本体 + 前端 + 运行说明，不含个人数据）
+   - 仓库 **[Releases](https://github.com/chenxi101w/JMComicReader-windows/releases)** 页面，或从仓库文件中获取
+2. 用 **7-Zip** / 系统自带解压工具解压
+3. 双击 `JMComicReader.exe` 即可使用
+
+> 说明：本仓库采用**完整包直传**（GitHub 仓库本身不限大小），无需合并分卷。若日后改走 GitHub Release 附件发布且单文件 >25MB，再拆成 `.z01` + `.zip` 两卷（下载到同一文件夹后用 7-Zip 右键 `.z01` →「解压到」即可自动合并）。
 
 **运行要求**：Windows 10 / 11（64 位）；Edge **WebView2 运行时**（Win11 自带，缺则自动回退到系统浏览器模式，功能不受影响）。无需安装 Python，无需联网装依赖。
 

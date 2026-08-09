@@ -246,18 +246,6 @@
           </div>
           <button class="btn btn--sm btn--primary" id="blockPageBtn" style="align-self:flex-start;margin-top:4px"><i class="fas fa-list"></i> 查看 / 管理屏蔽列表</button>
 
-          <div class="subsection-title">同义词 / 别名</div>
-          <div class="setting-row" style="flex-direction:column;align-items:stretch;gap:12px">
-            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-              <select id="aliasType" class="btn btn--sm btn--ghost" style="padding:6px 10px"><option value="tag">标签</option><option value="author">作者</option></select>
-              <input id="aliasCanon" class="search-input" placeholder="标准词 canonical" style="flex:1;min-width:120px;padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface-2)">
-              <input id="aliasVariants" class="search-input" placeholder="同义词，逗号分隔" style="flex:1;min-width:140px;padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface-2)">
-              <button class="btn btn--sm btn--primary" id="aliasAddBtn"><i class="fas fa-plus"></i> 添加</button>
-            </div>
-            <div id="aliasList" class="manage-list"></div>
-            <button class="btn btn--sm btn--ghost" id="aliasSuggestBtn"><i class="fas fa-lightbulb"></i> 获取智能建议</button>
-            <div id="aliasSuggest" class="manage-list" style="display:none"></div>
-          </div>
         </div>
 
         <div class="subsection-title">标签高亮</div>
@@ -277,40 +265,28 @@
         </div>
 
         <div class="subsection-title">搜索偏好库</div>
-        <h3 class="section-title pref-lib-title" id="prefLibToggle" role="button" tabindex="0" title="展开 / 收起" style="margin-top:6px">
-          <i class="fas fa-heart"></i> 历史 / 标签 / 作者
-          <span class="pref-lib-sub">误删可恢复 · 可编辑删减</span>
-          <i class="fas fa-chevron-down pref-lib-caret"></i>
-        </h3>
-        <div class="setting-row__desc" style="margin:2px 0 12px">管理搜索历史 / 收藏标签 / 收藏作者。<b>误删可恢复</b>——删除只移入回收站，下方「已删除」区可一键恢复。这里编辑的内容会同步到搜索栏的展示。</div>
-        <div class="pref-lib-body" id="prefLibBody" hidden>
-          <div class="pref-lib-block" data-cat="history">
-            <div class="pref-lib-block__head"><i class="fas fa-clock"></i> 搜索历史</div>
-            <div class="pref-lib-addrow">
-              <input class="search-input" data-add-input placeholder="输入历史词">
-              <button class="btn btn--sm btn--primary" data-add-btn><i class="fas fa-plus"></i></button>
-            </div>
-            <div class="pref-lib-list" data-list></div>
-            <div class="pref-lib-trash" data-trash hidden></div>
+        <div class="setting-row__desc" style="margin:2px 0 12px">
+          上方「搜索栏展示的（当前库）」会显示在搜索下拉；下方「全部库（含已删除）」汇总所有历史 / 标签 / 作者，包括已删除（回收站）项。
+          <b>拖动</b>上方 chip 到「全部库」即删除（移入回收站）；把「全部库」里已删除项拖回上方即恢复。也可把标签 / 作者 chip 直接拖进下方「同义词」输入框快速填入。
+        </div>
+
+        <h3 class="section-title pref-lib-title"><i class="fas fa-eye"></i> 搜索栏展示的（当前库）</h3>
+        <div class="pref-lib-section" id="prefLibShown"></div>
+
+        <h3 class="section-title pref-lib-title"><i class="fas fa-database"></i> 全部库（含已删除）</h3>
+        <div class="pref-lib-section" id="prefLibAll"></div>
+
+        <div class="subsection-title">同义词 / 别名</div>
+        <div class="setting-row" style="flex-direction:column;align-items:stretch;gap:12px">
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <select id="aliasType" class="btn btn--sm btn--ghost" style="padding:6px 10px"><option value="tag">标签</option><option value="author">作者</option></select>
+            <input id="aliasCanon" class="search-input pref-lib-drop" placeholder="标准词 canonical（可拖入）" style="flex:1;min-width:120px;padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface-2)">
+            <input id="aliasVariants" class="search-input pref-lib-drop" placeholder="同义词，逗号分隔（可拖入）" style="flex:1;min-width:140px;padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface-2)">
+            <button class="btn btn--sm btn--primary" id="aliasAddBtn"><i class="fas fa-plus"></i> 添加</button>
           </div>
-          <div class="pref-lib-block" data-cat="tags">
-            <div class="pref-lib-block__head"><i class="fas fa-tag"></i> 收藏标签</div>
-            <div class="pref-lib-addrow">
-              <input class="search-input" data-add-input placeholder="输入标签">
-              <button class="btn btn--sm btn--primary" data-add-btn><i class="fas fa-plus"></i></button>
-            </div>
-            <div class="pref-lib-list" data-list></div>
-            <div class="pref-lib-trash" data-trash hidden></div>
-          </div>
-          <div class="pref-lib-block" data-cat="authors">
-            <div class="pref-lib-block__head"><i class="fas fa-user-pen"></i> 收藏作者</div>
-            <div class="pref-lib-addrow">
-              <input class="search-input" data-add-input placeholder="输入作者名">
-              <button class="btn btn--sm btn--primary" data-add-btn><i class="fas fa-plus"></i></button>
-            </div>
-            <div class="pref-lib-list" data-list></div>
-            <div class="pref-lib-trash" data-trash hidden></div>
-          </div>
+          <div id="aliasList" class="manage-list"></div>
+          <button class="btn btn--sm btn--ghost" id="aliasSuggestBtn"><i class="fas fa-lightbulb"></i> 获取智能建议</button>
+          <div id="aliasSuggest" class="manage-list" style="display:none"></div>
         </div>
       </div>
 

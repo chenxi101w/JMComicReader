@@ -1118,6 +1118,28 @@ img { display: block; max-width: 100%; }
 .sp-clear-trash { width: auto; height: auto; border-radius: 999px; padding: 3px 10px; font-size: 11px; }
 .sp-clear-trash:hover { background: color-mix(in srgb, var(--danger) 16%, transparent); color: var(--danger); }
 
+/* 偏好库分区：上下两块（搜索栏展示 / 全部库），同时充当拖放放置区 */
+.section-title.pref-lib-title { cursor: default; }
+.pref-lib-section {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 14px;
+  margin: 10px 0 18px;
+  padding: 12px;
+  border: 1px dashed transparent;
+  border-radius: var(--radius);
+  transition: border-color .15s var(--ease), background .15s var(--ease);
+}
+.drop-target {
+  border-color: var(--accent) !important;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+/* 同义词输入框作为拖放目标 */
+.pref-lib-drop { transition: border-color .15s var(--ease), box-shadow .15s var(--ease); }
+.pref-lib-drop.drop-target { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 35%, transparent); }
+.sp-chip { cursor: grab; }
+.sp-chip:active { cursor: grabbing; }
+
 /* 带撤销按钮的提示 */
 .toast--undo { pointer-events: auto; cursor: default; }
 .toast__undo { margin-left: 8px; background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent);

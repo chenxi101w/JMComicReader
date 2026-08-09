@@ -81,6 +81,8 @@ class JMCrawler:
         # 详情缓存异步落盘用的锁 / 状态标记，避免每次搜索同步写大盘 JSON 卡住响应
         self._detail_save_lock = threading.Lock()
         self._detail_save_in_progress = False
+        # 内存详情缓存的读写锁，避免并发搜索请求下字典迭代/重建竞争
+        self._detail_cache_lock = threading.Lock()
 
     def _build_default_option_content(self) -> Dict:
         return {
@@ -478,7 +480,8 @@ class JMCrawler:
         # 命中本地详情缓存的先直接取，避免重复网络请求（重复搜同一批标签≈秒出）
         missing = []
         for album_id in cleaned_ids:
-            cached = self.detail_cache.get(str(album_id))
+            with self._detail_cache_lock:
+                cached = self.detail_cache.get(str(album_id))
             if cached:
                 details[str(album_id)] = cached
             else:
@@ -511,13 +514,15 @@ class JMCrawler:
 
                     if detail:
                         details[str(album_id)] = detail
-                        self.detail_cache[str(album_id)] = detail
+                        with self._detail_cache_lock:
+                            self.detail_cache[str(album_id)] = detail
                 if not_done:
                     print(f"搜索详情有 {len(not_done)} 个在超时内未完成，本次跳过（下次再补）")
 
             # 控制缓存体积（dict 保序，保留最近 3000 条，文件更小落盘更快）
-            if len(self.detail_cache) > 3500:
-                self.detail_cache = dict(list(self.detail_cache.items())[-3000:])
+            with self._detail_cache_lock:
+                if len(self.detail_cache) > 3500:
+                    self.detail_cache = dict(list(self.detail_cache.items())[-3000:])
             self._save_detail_cache_async()
 
         return details
@@ -670,6 +675,14 @@ class JMCrawler:
             traceback.print_exc()
             return []
 
+    def _expand_single(self, tag: str) -> List[str]:
+        """展开单个标签的全部同义词（含自身）。惰性导入 filter_service 避免循环依赖。"""
+        try:
+            from core.services.filter_service import expand_tags
+            return expand_tags([tag])
+        except Exception:
+            return [tag]
+
     def search_by_tags(
         self, tags: List[str], max_total: int = 80, mode: str = "or",
         input_tags: Optional[List[str]] = None
@@ -733,10 +746,24 @@ class JMCrawler:
         for raw_id, detail in details.items():
             if not detail:
                 continue
-            detail_tags = set(detail.get("tags") or [])
+            detail_tags = {str(t).lower() for t in (detail.get("tags") or [])}
             if mode == "and":
-                if not all(t in detail_tags for t in tag_list):
-                    continue
+                # 每个「原始输入标签」至少命中其任一展开同义词即算命中；
+                # 用 tag_list（展开后的全部变体）做 OR 判定等价，但要求每个输入标签都命中。
+                # 这里直接基于用户实际输入 input_tags 判定，避免同义词交叉导致「且」失效。
+                if input_tags:
+                    hit = True
+                    for ot in input_tags:
+                        variants = {str(t).strip().lower() for t in self._expand_single(ot)}
+                        if not (variants & detail_tags):
+                            hit = False
+                            break
+                    if not hit:
+                        continue
+                else:
+                    # 无 input_tags 时退化为：所有展开变体都需命中（保留原语义）
+                    if not all(str(t).strip().lower() in detail_tags for t in tag_list):
+                        continue
             else:
                 # or 模式下所有候选本来就是按标签搜出来的，直接保留
                 pass

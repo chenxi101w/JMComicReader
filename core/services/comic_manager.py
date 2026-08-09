@@ -16,6 +16,7 @@ from core.config import BASE_DIR, DOWNLOAD_DIR, DB_FILE
 from core.models.database import (
     _get_conn,
     get_comic_categories,
+    get_all_comic_categories,
     set_comic_categories,
 )
 
@@ -27,13 +28,35 @@ class ComicManager:
         self.base_dir = BASE_DIR
         self.downloaded_dir = DOWNLOAD_DIR
         os.makedirs(self.downloaded_dir, exist_ok=True)
+        self._index_cache: Optional[Dict[int, str]] = None
 
     # ─── 路径/图片辅助 ─────────────────────────────────────
+    def _build_index(self) -> Dict[int, str]:
+        """单次 listdir 建立 jm_id -> 漫画目录索引，替代每本漫画都全目录扫描的 O(n²) 行为。"""
+        idx: Dict[int, str] = {}
+        try:
+            for name in os.listdir(self.downloaded_dir):
+                if "_" not in name:
+                    continue
+                try:
+                    jid = int(name.split("_", 1)[0])
+                except ValueError:
+                    continue
+                idx[jid] = os.path.join(self.downloaded_dir, name)
+        except OSError:
+            pass
+        return idx
+
+    def _get_index(self) -> Dict[int, str]:
+        if self._index_cache is None:
+            self._index_cache = self._build_index()
+        return self._index_cache
+
+    def _invalidate_index(self) -> None:
+        self._index_cache = None
+
     def _find_downloaded_dir(self, jm_id: int) -> Optional[str]:
-        for name in os.listdir(self.downloaded_dir):
-            if name.startswith(f"{jm_id}_"):
-                return os.path.join(self.downloaded_dir, name)
-        return None
+        return self._get_index().get(jm_id)
 
     def _comic_already_finalized(self, jm_id: int) -> bool:
         return self._find_downloaded_dir(jm_id) is not None
@@ -97,20 +120,14 @@ class ComicManager:
     def is_comic_downloaded(self, jm_id: int) -> bool:
         conn = _get_conn()
         row = conn.execute("SELECT id FROM downloaded_comics WHERE jm_id = ?", (jm_id,)).fetchone()
-        if row:
-            for name in os.listdir(self.downloaded_dir):
-                if name.startswith(f"{jm_id}_"):
-                    return True
+        if row and jm_id in self._get_index():
+            return True
         return False
 
     def add_downloaded_comic(self, jm_id: int, comic_info: dict) -> bool:
         conn = _get_conn()
         try:
-            comic_dir = None
-            for name in os.listdir(self.downloaded_dir):
-                if name.startswith(f"{jm_id}_"):
-                    comic_dir = os.path.join(self.downloaded_dir, name)
-                    break
+            comic_dir = self._find_downloaded_dir(jm_id)
             if not comic_dir:
                 return False
 
@@ -158,6 +175,7 @@ class ComicManager:
                 ),
             )
             conn.commit()
+            self._invalidate_index()
             return True
         except Exception as e:
             print(f"添加已下载漫画失败 {jm_id}: {e}")
@@ -180,14 +198,14 @@ class ComicManager:
                        FROM downloaded_comics ORDER BY download_time DESC"""
             rows = conn.execute(query).fetchall()
 
+        # 单次 listdir 建索引 + 批量取分类，避免 O(n²) 的逐本扫描与逐条查库
+        index = self._get_index()
+        all_cats = get_all_comic_categories()
+
         comics = []
         for row in rows:
             jm_id = row["jm_id"]
-            comic_dir = None
-            for name in os.listdir(self.downloaded_dir):
-                if name.startswith(f"{jm_id}_"):
-                    comic_dir = os.path.join(self.downloaded_dir, name)
-                    break
+            comic_dir = index.get(jm_id)
             if not comic_dir:
                 continue
 
@@ -209,8 +227,8 @@ class ComicManager:
                 except Exception:
                     pages = row["pages"] or 0
 
-            # 附加分类 ID 列表
-            cat_ids = get_comic_categories(jm_id)
+            # 附加分类 ID 列表（来自批量字典，零额外查询）
+            cat_ids = all_cats.get(jm_id, [])
 
             comics.append({
             "id": jm_id,
@@ -230,17 +248,16 @@ class ComicManager:
         return comics
 
     def get_comic_path(self, jm_id: int) -> Optional[str]:
-        for name in os.listdir(self.downloaded_dir):
-            if name.startswith(f"{jm_id}_"):
-                comic_dir = os.path.join(self.downloaded_dir, name)
-                for fname in os.listdir(comic_dir):
-                    if fname.endswith(".pdf"):
-                        return os.path.join(comic_dir, fname)
-                subdir = os.path.join(comic_dir, str(jm_id))
-                if os.path.isdir(subdir):
-                    return subdir
-                return comic_dir
-        return None
+        comic_dir = self._find_downloaded_dir(jm_id)
+        if not comic_dir:
+            return None
+        for fname in os.listdir(comic_dir):
+            if fname.endswith(".pdf"):
+                return os.path.join(comic_dir, fname)
+        subdir = os.path.join(comic_dir, str(jm_id))
+        if os.path.isdir(subdir):
+            return subdir
+        return comic_dir
 
     def get_comic_pages(self, jm_id: int) -> int:
         conn = _get_conn()
@@ -248,11 +265,7 @@ class ComicManager:
         if row and row["pages"] and row["pages"] > 0:
             return row["pages"]
 
-        comic_dir = None
-        for name in os.listdir(self.downloaded_dir):
-            if name.startswith(f"{jm_id}_"):
-                comic_dir = os.path.join(self.downloaded_dir, name)
-                break
+        comic_dir = self._find_downloaded_dir(jm_id)
         if not comic_dir:
             return 0
 
@@ -312,10 +325,22 @@ class ComicManager:
         if not comic_dir:
             return None
 
+        # 捕获越界校验基准（章节重定向前的真实根目录）
+        confine_base = comic_dir
+
         if chapter_id:
+            # 拒绝任何路径元字符，防止目录跳出（纵深防御，API 层已先校验）
+            if ".." in chapter_id or "/" in chapter_id or "\\" in chapter_id or os.path.sep in chapter_id:
+                return None
             chapter_path = os.path.join(comic_dir, chapter_id)
             if os.path.isdir(chapter_path):
                 comic_dir = chapter_path
+
+        # 最终落盘前再次确认路径不越出漫画根目录（防符号链接/相对路径逃逸）
+        resolved = os.path.realpath(comic_dir)
+        base = os.path.realpath(confine_base)
+        if not (resolved == base or resolved.startswith(base + os.sep)):
+            return None
 
         candidates = [
             f"{page_num:05d}.jpg", f"{page_num:05d}.png",
@@ -357,10 +382,10 @@ class ComicManager:
             conn.execute("DELETE FROM downloaded_comics WHERE jm_id = ?", (jm_id,))
             conn.execute("DELETE FROM comic_categories WHERE comic_jm_id = ?", (jm_id,))
             conn.commit()
-            for name in os.listdir(self.downloaded_dir):
-                if name.startswith(f"{jm_id}_"):
-                    shutil.rmtree(os.path.join(self.downloaded_dir, name))
-                    break
+            comic_dir = self._find_downloaded_dir(jm_id)
+            if comic_dir:
+                shutil.rmtree(comic_dir, ignore_errors=True)
+            self._invalidate_index()
             return True
         except Exception as e:
             print(f"删除漫画失败 {jm_id}: {e}")

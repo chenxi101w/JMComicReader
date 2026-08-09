@@ -9,6 +9,7 @@ import shutil
 import sys
 import time
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 
 from flask import Flask, render_template, jsonify, request, send_file, redirect
@@ -28,7 +29,7 @@ from core.models.database import (
     delete_download_history, clear_download_history,
     add_block, remove_block, remove_block_by_value, get_blocks, get_blocked_sets, get_local_block_hits,
     add_alias, remove_alias, get_aliases, normalize_author,
-    get_search_history_aggregated,
+    get_search_history_aggregated, cleanup_old_records,
 )
 from core.services.filter_service import (
     postprocess_results, expand_tags, expand_author, suggest_aliases,
@@ -37,7 +38,8 @@ from core.services.filter_service import (
 # ─── Flask 初始化 ──────────────────────────────────────────
 
 app = Flask(__name__, template_folder=TEMPLATE_DIR, static_folder=STATIC_DIR)
-CORS(app)
+# 桌面应用仅通过 pywebview 同源访问，收紧 CORS 到 localhost，避免任意网页跨域调用本地 API
+CORS(app, resources={r"/*": {"origins": r"https?://(127\.0\.0\.1|localhost)(:\d+)?$"}})
 
 
 @app.context_processor
@@ -55,6 +57,24 @@ init_database()
 jm_crawler = JMCrawler()
 download_manager = DownloadManager()
 comic_manager = ComicManager()
+
+# 历史记录（搜索/阅读）每日清理一次，避免无限增长
+def _schedule_history_cleanup():
+    """每 24h 清理一次超过 30 天的搜索/阅读历史。后台线程（daemon），不阻塞启动、不阻止进程退出。"""
+    def _run():
+        try:
+            cleanup_old_records(30)
+        except Exception as e:
+            print(f"历史记录清理失败: {e}")
+        finally:
+            t = threading.Timer(86400, _run)
+            t.daemon = True
+            t.start()
+    t0 = threading.Timer(86400, _run)
+    t0.daemon = True
+    t0.start()
+
+_schedule_history_cleanup()
 
 # 线程安全的下载进度
 _dl_lock = threading.Lock()
@@ -114,11 +134,44 @@ def search_by_jm_id(jm_id):
     try:
         info = jm_crawler.get_comic_info(jm_id)
         if info:
+            blocked = get_blocked_sets()
+            cid = info.get("id")
+            is_blocked = (cid is not None and cid in blocked["works"]) or (
+                info.get("author") and normalize_author(info.get("author")) in blocked["authors"]
+            )
+            if is_blocked:
+                return jsonify({"success": False, "message": "该作品已被屏蔽"})
             add_search_history("jm_id", str(jm_id), 1)
             return jsonify({"success": True, "data": info})
         return jsonify({"success": False, "message": "未找到对应的漫画"})
     except Exception as e:
         return jsonify({"success": False, "message": f"搜索失败: {str(e)}"})
+
+
+def _filter_blocked(results):
+    """从搜索结果中剔除已被拉黑的作品 / 作者 / 标签（与书架一致）。
+
+    搜索路由此前未应用黑名单，导致在搜索页屏蔽作品后，翻页或切回搜索页时
+    被屏蔽的作品会重新出现。这里统一过滤，保证屏蔽在所有搜索入口都生效。
+    """
+    if not results:
+        return results
+    blocked = get_blocked_sets()
+    if not (blocked["works"] or blocked["authors"] or blocked["tags"]):
+        return results
+    out = []
+    for c in results:
+        cid = c.get("id")
+        if cid is not None and cid in blocked["works"]:
+            continue
+        author = c.get("author")
+        if author and normalize_author(author) in blocked["authors"]:
+            continue
+        tags = c.get("tags") or []
+        if any(str(t) in blocked["tags"] for t in tags):
+            continue
+        out.append(c)
+    return out
 
 
 @app.route("/api/search/keyword")
@@ -137,6 +190,7 @@ def search_by_keyword():
             order_by=order_by, time_range=time_range,
         )
         results = postprocess_results(results)
+        results = _filter_blocked(results)
         add_search_history("keyword", keyword, len(results))
         return jsonify({"success": True, "data": results})
     except Exception as e:
@@ -166,6 +220,7 @@ def search_by_tags():
         input_tags = tag_list if search_priority == "input" else None
         results, stats = jm_crawler.search_by_tags(expanded, mode=mode, max_total=limit, input_tags=input_tags)
         results = postprocess_results(results)
+        results = _filter_blocked(results)
         add_search_history("tag", ",".join(tag_list), len(results))
         return jsonify({"success": True, "data": results, "stats": stats})
     except Exception as e:
@@ -193,6 +248,7 @@ def search_by_author():
                     seen.add(cid)
                     results.append(c)
         results = postprocess_results(results)
+        results = _filter_blocked(results)
         add_search_history("author", author, len(results))
         return jsonify({"success": True, "data": results, "author": author})
     except Exception as e:
@@ -250,6 +306,7 @@ def search_combined():
 
         candidates = candidates[:limit]
         candidates = postprocess_results(candidates)
+        candidates = _filter_blocked(candidates)
 
         # 记录联合搜索历史（关键词 / 作者 / 标签分别记一条，供推荐算法提取兴趣）
         if keyword:
@@ -290,6 +347,49 @@ def enrich_search_results():
 # 推荐结果短期缓存（避免每次切回搜索页都重新打 JM 服务器）
 _recommend_cache = {"sig": "", "time": 0, "payload": None}
 _RECOMMEND_TTL = 300  # 秒
+
+
+def _offline_recommend(seeds, count):
+    """离线推荐：实时搜索不可用时，用本地已下载漫画按标签/作者相似度推荐。
+
+    这是「推荐功能从没出过东西」的主因修复——此前一旦对 jmcomic 源站
+    的实时搜索失败（无代理 / 站点不可达），run_seed 全抛异常返回空，
+    最终 data 为空，前端永远显示空。这里降级到本地数据。
+    """
+    try:
+        dl = comic_manager.get_downloaded_comics() or []
+    except Exception:
+        return [], "本地暂无已下载漫画，无法离线推荐"
+    if not dl:
+        return [], "本地暂无已下载漫画，无法离线推荐"
+    seed_tags = {s["value"].strip().lower() for s in seeds if s["type"] == "tag"}
+    seed_authors = {normalize_author(s["value"]) for s in seeds if s["type"] == "author"}
+    scored = []
+    for c in dl:
+        tags = [str(t).lower() for t in (c.get("tags") or [])]
+        author = c.get("author") or ""
+        score = 0
+        if seed_tags & set(tags):
+            score += 2
+        if normalize_author(author) in seed_authors:
+            score += 3
+        if score > 0:
+            scored.append((score, c))
+    scored.sort(key=lambda x: -x[0])
+    out = [c for _, c in scored]
+    seen = {c.get("id") for c in out}
+    for c in dl:  # 相似度不足时用最近下载补齐
+        if c.get("id") not in seen:
+            out.append(c)
+        if len(out) >= count:
+            break
+    data = [{
+        "id": c.get("id"), "title": c.get("title"), "author": c.get("author"),
+        "tags": c.get("tags") or [], "pages": c.get("pages", 0),
+        "favorites": c.get("favorites", 0), "cover": "",
+    } for c in out[:count]]
+    note = "网络推荐不可用，已用本地相似漫画推荐" if scored else "网络不可用，已用最近下载的漫画推荐"
+    return data, note
 
 
 @app.route("/api/recommend")
@@ -413,8 +513,21 @@ def recommend():
                         merged[cid] = c
 
         data = list(merged.values())
-        data.sort(key=lambda x: jm_crawler._parse_count(x.get("favorites", 0)), reverse=True)
+        def _fav_score(c):
+            try:
+                return jm_crawler._parse_count(c.get("favorites", 0))
+            except Exception:
+                return 0
+        data.sort(key=_fav_score, reverse=True)
         data = data[:count]
+
+        # 实时搜索无结果（多半是网络不通）→ 离线降级，用本地已下载漫画推荐
+        if not data:
+            offline, note = _offline_recommend(seeds, count)
+            if offline:
+                return jsonify({"success": True, "data": offline, "enabled": True,
+                                "basis": basis, "seeds": [f"{s['type']}:{s['value']}" for s in seeds],
+                                "is_default": True, "cached": False, "note": note})
 
         payload = {"success": True, "data": data, "enabled": True,
                    "basis": basis, "seeds": [f"{s['type']}:{s['value']}" for s in seeds],
@@ -494,6 +607,8 @@ def download_comic(jm_id):
             except Exception as e:
                 _update_progress(download_id, 0, "error", str(e))
                 add_download_history(jm_id, comic_info.get("title", ""), "failed", str(e))
+                # 失败任务同样延时清理，避免无限残留（保留 30s 供前端提示错误）
+                threading.Timer(30.0, _cleanup_progress, args=(download_id,)).start()
 
         t = threading.Thread(target=_task, daemon=True)
         t.start()
@@ -553,6 +668,8 @@ def download_batch():
                 except Exception as e:
                     _update_progress(_did, 0, "error", str(e))
                     add_download_history(_id, _info.get("title", ""), "failed", str(e))
+                    # 失败任务同样延时清理，避免无限残留
+                    threading.Timer(30.0, _cleanup_progress, args=(_did,)).start()
 
             t = threading.Thread(target=_task, daemon=True)
             t.start()
@@ -745,7 +862,7 @@ def read_comic(jm_id):
             if c["id"] == jm_id:
                 title = c["title"]
                 break
-        return {
+        return jsonify({
             "success": True,
             "data": {
                 "title": title, "chapters": chapters,
@@ -754,7 +871,7 @@ def read_comic(jm_id):
                 "total_chapters": len(chapters),
                 "comic_path": chapters[0]["path"],
             },
-        }
+        }), 200
     except Exception as e:
         return jsonify({"success": False, "message": f"获取阅读数据失败: {str(e)}"})
 
@@ -773,7 +890,7 @@ def read_comic_chapter(jm_id, chapter_id):
             if c["id"] == jm_id:
                 title = c["title"]
                 break
-        return {
+        return jsonify({
             "success": True,
             "data": {
                 "title": title, "chapters": chapters,
@@ -782,7 +899,7 @@ def read_comic_chapter(jm_id, chapter_id):
                 "total_chapters": len(chapters),
                 "comic_path": target["path"],
             },
-        }
+        }), 200
     except Exception as e:
         return jsonify({"success": False, "message": f"获取章节数据失败: {str(e)}"})
 
@@ -791,6 +908,11 @@ def read_comic_chapter(jm_id, chapter_id):
 def get_comic_page(jm_id, page_num):
     try:
         chapter_id = request.args.get("chapter", None)
+        # 纵深防御：chapter 必须是真实存在的章节 id，拒绝任意字符串（防路径遍历）
+        if chapter_id is not None:
+            valid = {str(c["id"]) for c in comic_manager.get_comic_chapters(jm_id)}
+            if chapter_id not in valid:
+                return jsonify({"success": False, "message": "章节不存在"}), 400
         page_path = comic_manager.get_comic_page_path(jm_id, page_num, chapter_id)
         if page_path and os.path.exists(page_path):
             return send_file(page_path)
@@ -901,7 +1023,16 @@ def save_settings():
     try:
         from core.models.database import set_system_config
         data = request.get_json(force=True, silent=True) or {}
+        # 仅允许已知配置键写入，防止客户端污染 system_config 表或写入非预期键
+        ALLOWED = {
+            "max_concurrent_downloads", "auto_cleanup_cache", "cache_size_limit", "image_quality",
+            "theme", "proxy_enabled", "proxy_url", "search_result_limit", "search_priority",
+            "hide_page_chapter", "show_block_hits", "search_tag_limit", "reader_chapter_toast",
+            "recommend_enabled", "recommend_count", "recommend_basis", "recommend_custom",
+        }
         for k, v in data.items():
+            if k not in ALLOWED:
+                continue
             # 列表/字典类配置（如推荐依据、自定义推荐内容）以 JSON 存储，便于前端解析
             if isinstance(v, (list, dict)):
                 set_system_config(k, json.dumps(v, ensure_ascii=False))
@@ -1075,7 +1206,9 @@ def alias_suggestions():
 # ─── 入口（源码直接运行时用） ──────────────────────────────
 
 def main():
-    app.run(debug=True, host="0.0.0.0", port=5000)
+    # 仅本地回环监听；调试器必须显式通过 FLASK_DEBUG=1 开启，永不对外暴露（避免 Werkzeug 调试器 RCE）
+    debug = os.environ.get("FLASK_DEBUG") == "1"
+    app.run(debug=debug, host="127.0.0.1", port=5000)
 
 
 if __name__ == "__main__":

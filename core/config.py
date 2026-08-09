@@ -12,13 +12,22 @@ IS_FROZEN: bool = getattr(sys, "frozen", False)
 if IS_FROZEN:
     EXEC_DIR = os.path.dirname(sys.executable)
     # one-file 模式用 _MEIPASS；onedir 模式（本项目的打包方式）
-    # PyInstaller 会把 datas 放到 _internal 子目录。
+    # 不同 PyInstaller 版本/ spec 把 datas+binaries 落到的子目录名不同
+    # （如 _internal 或 spec 指定的 appdata）。直接定位包含 web/ 的目录，
+    # 避免硬编码目录名导致运行时找不到模板/静态资源。
     meipass = getattr(sys, "_MEIPASS", None)
     if meipass and os.path.isdir(meipass):
         BUNDLE_DIR = meipass
     else:
-        internal = os.path.join(EXEC_DIR, "_internal")
-        BUNDLE_DIR = internal if os.path.isdir(internal) else EXEC_DIR
+        candidates = [
+            os.path.join(EXEC_DIR, "appdata"),
+            os.path.join(EXEC_DIR, "_internal"),
+            EXEC_DIR,
+        ]
+        BUNDLE_DIR = next(
+            (c for c in candidates if os.path.isdir(os.path.join(c, "web"))),
+            EXEC_DIR,
+        )
 else:
     EXEC_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     BUNDLE_DIR = EXEC_DIR

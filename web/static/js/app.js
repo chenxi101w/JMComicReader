@@ -110,65 +110,162 @@ const PrefLibrary = (() => {
    放在模块级，供设置页的「搜索偏好库」钻取面板调用。
    依赖：PrefLibrary（数据 + 回收站）、toastUndo（撤销提示）、escapeHtml。 */
 function initPrefLib() {
-  const toggle = document.getElementById('prefLibToggle');
-  const body = document.getElementById('prefLibBody');
-  if (!body) return;
+  const shownRoot = document.getElementById('prefLibShown');
+  const allRoot = document.getElementById('prefLibAll');
+  if (!shownRoot || !allRoot) return;
+
+  // 每个分类在「搜索栏展示」与「全部库」两区各渲染一份
+  const CATS = [
+    { cat: 'history', icon: 'fa-clock',    label: '搜索历史', placeholder: '输入历史词' },
+    { cat: 'tags',    icon: 'fa-tag',      label: '收藏标签', placeholder: '输入标签' },
+    { cat: 'authors', icon: 'fa-user-pen', label: '收藏作者', placeholder: '输入作者名' },
+  ];
+  // 拖到同义词框时，按分类推断别名类型
+  const TYPE_OF = { history: 'keyword', tags: 'tag', authors: 'author' };
+
+  function ensureBlock(parent, meta) {
+    let block = parent.querySelector(`.pref-lib-block[data-cat="${meta.cat}"]`);
+    if (block) return block;
+    block = document.createElement('div');
+    block.className = 'pref-lib-block';
+    block.dataset.cat = meta.cat;
+    block.innerHTML = `
+      <div class="pref-lib-block__head"><i class="fas ${meta.icon}"></i> ${meta.label}</div>
+      <div class="pref-lib-addrow">
+        <input class="search-input" data-add-input placeholder="${meta.placeholder}">
+        <button class="btn btn--sm btn--primary" data-add-btn><i class="fas fa-plus"></i></button>
+      </div>
+      <div class="pref-lib-list" data-list></div>
+      <div class="pref-lib-trash" data-trash hidden></div>`;
+    const input = block.querySelector('[data-add-input]');
+    const addBtn = block.querySelector('[data-add-btn]');
+    const add = () => {
+      const v = input.value.trim();
+      if (!v) { toast('请输入内容', 'warn'); return; }
+      if (PrefLibrary.list(meta.cat).includes(v)) { toast('已存在', 'warn'); return; }
+      PrefLibrary.add(meta.cat, v); input.value = ''; render();
+    };
+    addBtn.onclick = add;
+    input.addEventListener('keydown', e => { if (e.key === 'Enter') add(); });
+    parent.appendChild(block);
+    return block;
+  }
+
+  function makeChip(cat, v, deleted) {
+    const type = TYPE_OF[cat];
+    const chip = document.createElement('span');
+    chip.className = 'sp-chip' + (deleted ? ' sp-chip--trash' : '');
+    chip.dataset.cat = cat; chip.dataset.v = v; chip.dataset.type = type;
+    chip.setAttribute('draggable', 'true');
+    chip.innerHTML = `
+      <span class="sp-chip__name">${escapeHtml(v)}</span>
+      ${deleted
+        ? `<button class="sp-restore" data-v="${escapeHtml(v)}" title="恢复"><i class="fas fa-rotate-left"></i></button>`
+        : `<button class="sp-chip__edit" data-v="${escapeHtml(v)}" title="编辑"><i class="fas fa-pen"></i></button><button class="sp-chip__del" data-v="${escapeHtml(v)}" title="删除"><i class="fas fa-times"></i></button>`}`;
+    chip.addEventListener('dragstart', e => {
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', v);
+      try { e.dataTransfer.setData('application/x-jm', JSON.stringify({ cat, v, deleted: !!deleted })); } catch (_) {}
+    });
+    if (deleted) {
+      chip.querySelector('.sp-restore').onclick = () => { PrefLibrary.restore(cat, v); render(); };
+    } else {
+      chip.querySelector('.sp-chip__del').onclick = () => {
+        PrefLibrary.remove(cat, v); render();
+        toastUndo(`已删除「${v}」，点此恢复`, () => { PrefLibrary.restore(cat, v); render(); });
+      };
+      chip.querySelector('.sp-chip__edit').onclick = () => {
+        const newV = prompt('修改：', v);
+        if (newV == null) return;
+        if (!PrefLibrary.edit(cat, v, newV.trim())) { toast('修改失败或内容已存在', 'warn'); return; }
+        render();
+      };
+    }
+    return chip;
+  }
+
   function render() {
-    body.querySelectorAll('.pref-lib-block').forEach(block => {
-      const cat = block.dataset.cat;
+    // 「搜索栏展示的」：仅当前库（active）
+    CATS.forEach(meta => {
+      const block = ensureBlock(shownRoot, meta);
+      const listEl = block.querySelector('[data-list]');
+      const arr = PrefLibrary.list(meta.cat);
+      listEl.innerHTML = '';
+      if (!arr.length) listEl.innerHTML = `<div class="manage-empty">暂无项目</div>`;
+      else arr.forEach(v => listEl.appendChild(makeChip(meta.cat, v, false)));
+    });
+    // 「全部库（含已删除）」：active + 回收站
+    CATS.forEach(meta => {
+      const block = ensureBlock(allRoot, meta);
       const listEl = block.querySelector('[data-list]');
       const trashEl = block.querySelector('[data-trash]');
-      const arr = PrefLibrary.list(cat);
-      listEl.innerHTML = arr.length
-        ? arr.map(v => `<span class="sp-chip"><span class="sp-chip__name">${escapeHtml(v)}</span><button class="sp-chip__edit" data-v="${escapeHtml(v)}" title="编辑"><i class="fas fa-pen"></i></button><button class="sp-chip__del" data-v="${escapeHtml(v)}" title="删除"><i class="fas fa-times"></i></button></span>`).join('')
-        : `<div class="manage-empty">暂无项目</div>`;
-      listEl.querySelectorAll('.sp-chip__del').forEach(b => b.onclick = () => {
-        const v = b.dataset.v;
-        PrefLibrary.remove(cat, v);
-        render();
-        toastUndo(`已删除「${v}」，点此恢复`, () => { PrefLibrary.restore(cat, v); render(); });
-      });
-      listEl.querySelectorAll('.sp-chip__edit').forEach(b => b.onclick = () => {
-        const oldV = b.dataset.v;
-        const newV = prompt('修改：', oldV);
-        if (newV == null) return;
-        if (!PrefLibrary.edit(cat, oldV, newV.trim())) { toast('修改失败或内容已存在', 'warn'); return; }
-        render();
-      });
-      const trash = PrefLibrary.trash(cat);
+      const active = PrefLibrary.list(meta.cat);
+      const trash = PrefLibrary.trash(meta.cat);
+      listEl.innerHTML = '';
+      if (!active.length) listEl.innerHTML = `<div class="manage-empty">（无展示项）</div>`;
+      else active.forEach(v => listEl.appendChild(makeChip(meta.cat, v, false)));
       if (trash.length) {
         trashEl.hidden = false;
-        trashEl.innerHTML = `<div class="pref-lib-trash__head">已删除（可恢复）<button class="sp-clear-trash" type="button" title="清空回收站">清空</button></div>` +
-          trash.map(v => `<span class="sp-chip sp-chip--trash"><span class="sp-chip__name">${escapeHtml(v)}</span><button class="sp-restore" data-v="${escapeHtml(v)}" title="恢复"><i class="fas fa-rotate-left"></i></button></span>`).join('');
-        trashEl.querySelector('.sp-clear-trash').onclick = () => { PrefLibrary.clearTrash(cat); render(); };
-        trashEl.querySelectorAll('.sp-restore').forEach(b => b.onclick = () => { PrefLibrary.restore(cat, b.dataset.v); render(); });
+        trashEl.innerHTML = `<div class="pref-lib-trash__head">已删除（可拖回上方恢复 / 点 ↺ 恢复）<button class="sp-clear-trash" type="button" title="清空回收站">清空</button></div>`;
+        trash.forEach(v => trashEl.appendChild(makeChip(meta.cat, v, true)));
+        trashEl.querySelector('.sp-clear-trash').onclick = () => { PrefLibrary.clearTrash(meta.cat); render(); };
       } else {
         trashEl.hidden = true; trashEl.innerHTML = '';
       }
     });
   }
-  if (toggle) {
-    const doToggle = () => {
-      body.hidden = !body.hidden;
-      toggle.classList.toggle('open', !body.hidden);
-      if (!body.hidden) render();
-    };
-    toggle.addEventListener('click', doToggle);
-    toggle.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); doToggle(); } });
+
+  // 拖放规则：
+  //  - 上方「搜索栏展示的」chip 拖到「全部库」区 = 删除（移入回收站）
+  //  - 「全部库」里已删除 chip 拖回「搜索栏展示的」区 = 恢复
+  function wireDrop(zone, onDrop) {
+    zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drop-target'); });
+    zone.addEventListener('dragleave', () => zone.classList.remove('drop-target'));
+    zone.addEventListener('drop', e => {
+      e.preventDefault(); zone.classList.remove('drop-target');
+      let payload = null;
+      try { payload = JSON.parse(e.dataTransfer.getData('application/x-jm')); } catch (_) {}
+      if (!payload) {
+        const v = e.dataTransfer.getData('text/plain');
+        if (!v) return;
+        payload = { cat: null, v, deleted: false };
+      }
+      onDrop(payload);
+    });
   }
-  body.querySelectorAll('[data-add-btn]').forEach(btn => {
-    const block = btn.closest('.pref-lib-block');
-    const cat = block.dataset.cat;
-    const input = block.querySelector('[data-add-input]');
-    const add = () => {
-      const v = input.value.trim();
-      if (!v) { toast('请输入内容', 'warn'); return; }
-      if (PrefLibrary.list(cat).includes(v)) { toast('已存在', 'warn'); return; }
-      PrefLibrary.add(cat, v); input.value = ''; render();
-    };
-    btn.onclick = add;
-    input.addEventListener('keydown', e => { if (e.key === 'Enter') add(); });
+  wireDrop(allRoot, p => {
+    if (p.cat) { PrefLibrary.remove(p.cat, p.v); render(); toast(`已移入回收站：${p.v}`, 'success'); }
   });
+  wireDrop(shownRoot, p => {
+    if (p.cat && p.deleted) { PrefLibrary.restore(p.cat, p.v); render(); toast(`已恢复：${p.v}`, 'success'); }
+  });
+
+  // 同义词输入框：接受从偏好库拖入的标签 / 作者，自动匹配别名类型
+  ['aliasCanon', 'aliasVariants'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('dragover', e => { e.preventDefault(); el.classList.add('drop-target'); });
+    el.addEventListener('dragleave', () => el.classList.remove('drop-target'));
+    el.addEventListener('drop', e => {
+      e.preventDefault(); el.classList.remove('drop-target');
+      let payload = null;
+      try { payload = JSON.parse(e.dataTransfer.getData('application/x-jm')); } catch (_) {}
+      const v = payload ? payload.v : e.dataTransfer.getData('text/plain');
+      if (!v) return;
+      const at = document.getElementById('aliasType');
+      if (payload && at && (payload.type === 'tag' || payload.type === 'author')) at.value = payload.type;
+      if (el.id === 'aliasVariants') {
+        const cur = el.value.split(/[,，]/).map(s => s.trim()).filter(Boolean);
+        if (!cur.includes(v)) cur.push(v);
+        el.value = cur.join('，');
+      } else {
+        el.value = v;
+      }
+      toast(`已填入：${v}`, 'success');
+    });
+  });
+
+  render();
 }
 
 /* ── 常用标签（钉在搜索栏右侧的快捷标签，支持拖拽排序）────────
@@ -515,6 +612,7 @@ async function blockWork(jmId, title) {
   if (!r.success) { toast(r.message || '操作失败', 'error'); return; }
   toast(`已拉黑《${title || jmId}》`, 'success');
   document.querySelectorAll(`.comic-card[data-jm-id="${jmId}"]`).forEach(c => c.remove());
+  pruneSearchSessionCards(c => String(c.id) === String(jmId));
   const cfg = await loadAppConfig();
   if (cfg.show_block_hits !== '0') showBlockHits('作品', title || jmId, r.local_hits);
 }
@@ -524,6 +622,7 @@ async function blockAuthor(author) {
   if (!r.success) { toast(r.message || '操作失败', 'error'); return; }
   toast(`已拉黑作者「${author}」`, 'success');
   document.querySelectorAll('.comic-card').forEach(c => { if (c.dataset.author === author) c.remove(); });
+  pruneSearchSessionCards(c => c.author === author);
   const cfg = await loadAppConfig();
   if (cfg.show_block_hits !== '0') showBlockHits('作者', author, r.local_hits);
 }
@@ -537,6 +636,7 @@ async function blockTag(tag) {
     const tags = (card.dataset.tags || '').split(',').filter(Boolean);
     if (tags.includes(tag)) card.remove();
   });
+  pruneSearchSessionCards(c => (c.tags || []).includes(tag));
   const cfg = await loadAppConfig();
   if (cfg.show_block_hits !== '0') showBlockHits('标签', tag, r.local_hits);
 }
@@ -585,6 +685,19 @@ async function unblockComic(jmId, author) {
   if (!r.success || !r.data || !r.data.length) { toast('未在黑名单中找到', 'warn'); return; }
   for (const id of r.data) await api('DELETE', `/api/blocklist/${id}`);
   toast('已取消拉黑', 'success');
+}
+
+/* 屏蔽后同步清理搜索页 sessionStorage 缓存，避免切回搜索页时屏蔽项「复活」。
+   搜索页用 sessionStorage 快照恢复卡片；后端虽已过滤搜索结果，但快照可能仍含旧卡片。 */
+function pruneSearchSessionCards(predicate) {
+  try {
+    const SK = 'jm_search_state';
+    const s = JSON.parse(sessionStorage.getItem(SK) || 'null');
+    if (!s || !Array.isArray(s.cards) || !s.cards.length) return;
+    const before = s.cards.length;
+    s.cards = s.cards.filter(c => !predicate(c));
+    if (s.cards.length !== before) sessionStorage.setItem(SK, JSON.stringify(s));
+  } catch (_) {}
 }
 
 

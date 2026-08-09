@@ -207,10 +207,13 @@ def get_all_categories() -> List[Dict]:
 
 
 def get_category_tree() -> List[Dict]:
-    """返回递归分类树（children 嵌套），每个节点附带漫画数量。"""
+    """返回递归分类树（children 嵌套），每个节点附带漫画数量（含所有子孙分类）。"""
+    from collections import defaultdict
+
     rows = get_all_categories()
     node_map: Dict[int, Dict] = {}
     roots: List[Dict] = []
+    children_map: Dict[Optional[int], List[int]] = defaultdict(list)
 
     # 一次性查每个分类的漫画数
     conn = _get_conn()
@@ -222,15 +225,35 @@ def get_category_tree() -> List[Dict]:
     for r in rows:
         node = {**r, "children": [], "count": counts.get(r["id"], 0)}
         node_map[r["id"]] = node
+        children_map[r["parent_id"]].append(r["id"])
 
-    for node in node_map.values():
-        pid = node.get("parent_id")
-        if pid and pid in node_map:
-            node_map[pid]["children"].append(node)
-            # 父节点计数 = 自己的 + 所有子节点之和
-            node_map[pid]["count"] += node["count"]
-        else:
-            roots.append(node)
+    # 自底向上递归求和：父节点 count = 直接归属数 + 各子节点累加 count（与 id 顺序无关）
+    def _total(cid: int) -> int:
+        s = node_map[cid]["count"]
+        for ch in children_map.get(cid, []):
+            s += _total(ch)
+        node_map[cid]["count"] = s
+        return s
+
+    for cid in list(node_map.keys()):
+        pid = node_map[cid]["parent_id"]
+        if pid not in node_map:
+            _total(cid)
+            roots.append(node_map[cid])
+
+    # 把子节点 dict 挂载到父节点的 children，构建完整树形结构
+    for pid, children in children_map.items():
+        if pid is not None and pid in node_map:
+            for ch in children:
+                node_map[pid]["children"].append(node_map[ch])
+
+    # 按原 sort_order / id 排序根节点与子节点，保持 UI 稳定
+    def _sort(nodes: List[Dict]) -> None:
+        nodes.sort(key=lambda n: (n.get("sort_order", 0), n["id"]))
+        for n in nodes:
+            _sort(n["children"])
+
+    _sort(roots)
     return roots
 
 
@@ -271,7 +294,13 @@ def set_category_parent(cat_id: int, parent_id: Optional[int]) -> bool:
 
 
 def delete_category(cat_id: int) -> bool:
+    """删除分类前，先将其子分类提升为被删节点的父级（避免 ON DELETE CASCADE 误删整棵子树）。"""
     conn = _get_conn()
+    row = conn.execute("SELECT parent_id FROM categories WHERE id = ?", (cat_id,)).fetchone()
+    parent = row["parent_id"] if row else None
+    conn.execute(
+        "UPDATE categories SET parent_id = ? WHERE parent_id = ?", (parent, cat_id)
+    )
     conn.execute("DELETE FROM categories WHERE id = ?", (cat_id,))
     conn.commit()
     return True
@@ -301,6 +330,17 @@ def get_comic_categories(jm_id: int) -> List[int]:
         "SELECT category_id FROM comic_categories WHERE comic_jm_id = ?", (jm_id,)
     ).fetchall()
     return [r["category_id"] for r in rows]
+
+
+def get_all_comic_categories() -> Dict[int, List[int]]:
+    """一次性返回 {jm_id: [category_id,...]}，供书架批量取分类，避免 N 次查询。"""
+    rows = _get_conn().execute(
+        "SELECT comic_jm_id, category_id FROM comic_categories"
+    ).fetchall()
+    out: Dict[int, List[int]] = {}
+    for r in rows:
+        out.setdefault(r["comic_jm_id"], []).append(r["category_id"])
+    return out
 
 
 def set_comic_categories(jm_id: int, category_ids: List[int]) -> None:

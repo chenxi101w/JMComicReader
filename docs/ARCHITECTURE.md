@@ -84,7 +84,6 @@ jmcomicreader-windows/
    在 `core/models/` 下新增 `schemas.py`（或用 dataclass）定义 ComicInfo/Progress/Category/History 等，作为前后端与 Android 的共同契约。
 
 ## 当前可做的安全整理（不破坏功能）
-- 更新 `docs/README.md`：结构图还是旧的 `backend/frontend`，版本号 1.2.0 已过时。
 - 删除源码目录下的运行时产物：`__pycache__`、`core/__pycache__`、`core/comics.db*`、`TempCache/`、`core/jm_option.yml`（若由程序自动生成）。
 - 补充 `.gitignore`（如果缺失）：排除 `__pycache__`, `build/`, `dist/`, `*.db*`, `TempCache/`, `webview_data/`。
 - 给大文件加模块级 docstring：`jm_crawler.py`, `download_manager.py`, `comic_manager.py`, `app.js`。

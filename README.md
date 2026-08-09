@@ -9,47 +9,76 @@
 
 ---
 
-## ✨ 功能特性
+## ✨ 功能一览
 
-- **多维度搜索**：关键词 / 标签 / 作者三种维度，搜索下拉三栏一目了然
-- **搜索偏好库**：历史、标签、作者可收藏、可编辑、可恢复（误删进回收站），一键回填搜索框
-- **在线阅读**：章节切换、图片预加载、缩放、拖拽、返回顶部
-- **本地下载与书架**：单本 / 批量下载，书架统一管理
-- **智能推荐主页**：基于你的搜索偏好（关键字 / 标签 / 作者）生成「为你推荐」
-- **丰富设置**：主题（亮 / 暗 / 跟随系统）、代理、推荐源、下载路径等
-- **数据可携带**：程序本体与个人数据分离，整个文件夹拷贝即完成迁移 / 备份
+| 功能 | 说明 |
+|------|------|
+| 🔍 多维度搜索 | 关键词 / 标签 / 作者三种方式，结果一目了然 |
+| ⭐ 搜索偏好库 | 历史、标签、作者可收藏、可编辑、可恢复（误删进回收站），一键回填搜索框 |
+| 📖 在线阅读 | 章节切换、图片预加载、缩放、拖拽、返回顶部 |
+| 💾 下载与书架 | 单本 / 批量下载，书架统一管理 |
+| 🧭 智能推荐 | 基于你的搜索偏好（关键字 / 标签 / 作者）生成「为你推荐」主页 |
+| 🎨 丰富设置 | 主题（亮 / 暗 / 跟随系统）、代理、推荐源、下载路径等 |
+| 📦 数据可携带 | 程序与个人数据分离，整个文件夹拷贝即完成迁移 / 备份 |
 
 ---
 
-## 📥 下载与运行
+## 📥 下载与运行（绿色版，推荐）
 
-### 方式一：绿色版（推荐，零配置）
-
-1. 获取 `JMComicReader_vX.Y.Z_portable.zip`（**单一完整包**，约 35MB，已含程序本体 + 前端 + 运行说明，不含个人数据）
-   - 仓库 **[Releases](https://github.com/chenxi101w/JMComicReader-windows/releases)** 页面，或从仓库文件中获取
+1. 获取 `JMComicReader_v2.4.4_portable.zip`（单一完整包，约 27MB，已含程序本体 + 前端，**不含个人数据**）
+   - 仓库 **[Releases](https://github.com/chenxi101w/JMComicReader-windows/releases)** 页面获取
 2. 用 **7-Zip** / 系统自带解压工具解压
 3. 双击 `JMComicReader.exe` 即可使用
 
-> 说明：本仓库采用**完整包直传**（GitHub 仓库本身不限大小），无需合并分卷。若日后改走 GitHub Release 附件发布且单文件 >25MB，再拆成 `.z01` + `.zip` 两卷（下载到同一文件夹后用 7-Zip 右键 `.z01` →「解压到」即可自动合并）。
+**运行要求**：Windows 10 / 11（64 位）；需 Edge **WebView2 运行时**（Windows 11 自带，Windows 10 若缺失请先安装 [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)）。无需安装 Python，无需联网装依赖。
 
-**运行要求**：Windows 10 / 11（64 位）；Edge **WebView2 运行时**（Win11 自带，缺则自动回退到系统浏览器模式，功能不受影响）。无需安装 Python，无需联网装依赖。
-
-### 方式二：从源码构建
-
-见下方「🛠 从源码构建」。
+> 首次启动会在 `JMComicReader.exe` **同级的 `UserData/`** 目录下自动生成数据目录，无需手动配置。
 
 ---
 
-## 🚀 快速开始
+## 🚀 功能详解（怎么用）
 
-| 入口 | 说明 |
-|------|------|
-| 主页 | 基于偏好的智能推荐，点作者 / 标签直达搜索 |
-| 搜索 | 关键词 / 标签 / 作者三维度，支持收藏偏好回填 |
-| 阅读 | 在线阅读，支持预加载、缩放、拖拽 |
-| 设置 | 主题、代理、推荐源、下载管理等 |
+### 1. 搜索漫画
+- 顶部搜索框支持 **三种维度**：直接输关键词、切到「标签」或「作者」标签页搜索。
+- 搜索结果下拉分三栏（关键词 / 标签 / 作者），对应关系清晰。
+- 想搜的标签或作者，点一下即可跳转搜索。
 
-> 首次启动会在 `JMComicReader.exe` **同级的 `UserData/`** 下自动生成数据目录，无需手动配置。
+### 2. 搜索偏好库（收藏常用搜索）
+- 搜过的关键词、标签、作者会进入「搜索偏好库」，可**收藏**常用的。
+- 收藏项可**编辑**、可**删除**；误删会进回收站，可恢复。
+- 在偏好库里点任意一项，会**一键回填**到搜索框，省得重复输入。
+
+### 3. 在线阅读
+- 点开漫画 → 进入章节列表 → 点章节开始阅读。
+- 阅读页支持：**章节切换**、**图片预加载**（翻页不转圈）、**缩放**、**拖拽**平移、**返回顶部**。
+- 阅读进度自动记录，下次打开接着看。
+
+### 4. 下载与书架
+- 漫画详情页可**单本下载**，书架页支持**批量下载**。
+- 下载的内容在「书架」统一管理，可离线阅读、可删除。
+- 下载路径在「设置」里自定义。
+
+### 5. 智能推荐主页
+- 打开软件默认进入「主页」，基于你的搜索偏好（关键字 / 标签 / 作者）生成「为你推荐」。
+- 点推荐里的作者 / 标签，直达对应搜索。
+
+### 6. 设置
+- **主题**：亮色 / 暗色 / 跟随系统。
+- **代理**：网络环境需要时填写。
+- **推荐源 / 下载管理**：调整推荐内容与下载行为、下载路径。
+
+### 7. 数据管理（迁移 / 备份 / 重置）
+- **迁移 / 备份**：整个程序文件夹拷到别的电脑即可，`UserData/` 会跟着走，数据不丢。
+- **重置**：删掉 `UserData/` 文件夹，所有本地配置与下载记录清空，下次启动恢复初始状态。
+- **分享给他人前**：请删除个人数据，见下方「分享注意」。
+
+---
+
+## ⚠️ 注意事项
+
+- **杀软拦截**：解压后个别杀软可能拦 `JMComicReader.exe`，放行即可。这是纯本地程序，**不会上传任何数据**。
+- **WebView2**：没有 WebView2 运行时无法启动窗口，请先安装（见下载小节链接）。
+- **网络**：搜索 / 下载需要能访问漫画源站的网络环境；代理在「设置」里配。
 
 ---
 
@@ -58,16 +87,15 @@
 ```bash
 # 1. 创建虚拟环境并安装依赖
 python -m venv build_venv
-build_venv\Scripts\pip install -r docs/requirements.txt
+build_venv\Scripts\pip install -r build/requirements.txt
 
-# 2. 构建单目录版 exe（产物放到 D:\Game\JMComicReader）
-build_venv\Scripts\python -m PyInstaller JMComicReader.spec ^
+# 2. 构建单目录版 exe
+build_venv\Scripts\python -m PyInstaller build/JMComicReader.spec ^
   --noconfirm --clean ^
-  --distpath D:/Game/JMComicReader/dist ^
-  --workpath D:/Game/JMComicReader/build
+  --distpath dist_out ^
+  --workpath build_out
 
-# 3. 部署：将 dist/JMComicReader 下的 exe + appdata 合并进运行目录，
-#    保留已有的 UserData/（个人数据）不动
+# 3. 构建完成后会在 dist_out/ 生成 JMComicReader/ 与 JMComicReader_vX.Y.Z_portable.zip
 ```
 
 > ⚠️ 分享 / 分发时请删除个人数据：`UserData/DownloadedComics/`、`UserData/webview_data/`、`UserData/core/comics.db`、`UserData/core/jm_option.yml`、`.app_url`、`UserData/TempCache/`。
@@ -79,16 +107,12 @@ build_venv\Scripts\python -m PyInstaller JMComicReader.spec ^
 ```
 jmcomicreader-windows/
 ├─ desktop_app.py          # 桌面入口（pywebview 启动 + Flask 线程）
-├─ core/
-│  ├─ app.py               # Flask 路由与接口
-│  └─ services/
-│     └─ jm_crawler.py     # JM 源站爬虫 / 搜索 / 详情 / 下载
+├─ core/                   # 后端（app/config/models/services）
 ├─ web/                    # 前端（Jinja2 模板 + 原生 JS/CSS）
-│  ├─ templates/
-│  ├─ static/js/app.js
-│  └─ static/css/style.css
-├─ docs/                   # 完整文档（API / 架构 / 分享说明）
-└─ JMComicReader.spec      # PyInstaller 配置
+├─ docs/                   # 文档（API / 架构 / 分享 / 审查 / 更新日志）
+├─ build/                  # 打包类（spec / 构建脚本 / 依赖清单）
+├─ dist_out/               # 构建产物（exe + appdata + 便携 zip，gitignore）
+└─ VERSION                 # 版本号（运行时读取 + 便携包命名）
 ```
 
 ---
@@ -106,17 +130,18 @@ jmcomicreader-windows/
 
 | 文档 | 说明 |
 |------|------|
-| [docs/README.md](docs/README.md) | 项目完整说明（功能、数据、构建） |
 | [docs/API.md](docs/API.md) | 后端 HTTP 接口契约 |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 系统架构与 Android 复刻准备 |
 | [docs/SHARE.md](docs/SHARE.md) | 分享包使用与分发说明 |
+| [docs/CODE_REVIEW.md](docs/CODE_REVIEW.md) | 代码审查与修复记录 |
+| [docs/CHANGELOG.md](docs/CHANGELOG.md) | 版本更新日志（含每版更新说明） |
 | [docs/LICENSE](docs/LICENSE) | MIT 许可证 |
-| [docs/requirements.txt](docs/requirements.txt) | Python 依赖清单 |
 
 ---
 
-## 🗺 近期更新
+## 🗺 更新日志
 
+- **v2.4.4** — 重新发布（区分已发布的 2.4.3）；内置路径遍历防护、跨域收紧、设置白名单、历史清理守护线程、阅读接口 JSON 化等质量修复。详见 [docs/CHANGELOG.md](docs/CHANGELOG.md)
 - **v2.4.3** — 修复搜索详情补全的 O(N²) 重复请求，搜索速度大幅提升
 - **v2.4.2** — 推荐独立成「主页」、设置页返回栈、搜索框视觉去线、推荐自定义内容改为关键字 / 标签 / 作者三区块
 

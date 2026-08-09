@@ -16,11 +16,10 @@ ENV/
 *.sqlite3
 
 # 打包产物（不需要提交）
-/build/
-/dist/
-/*.exe
-*.spec
-!JMComicReader.spec
+# 注意：build/ 是源码级打包脚本目录（spec/_build.py/requirements.txt），需提交，不忽略。
+dist_out/
+build_out/
+*.exe
 
 # 日志
 logs/
@@ -32,6 +31,7 @@ DownloadedComics/
 webview_data/
 cover_cache.json
 .app_url
+/UserData/
 
 # 临时文件
 *.tmp

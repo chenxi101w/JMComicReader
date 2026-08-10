@@ -2200,6 +2200,16 @@ function initReader() {
     preloadChapter(currentChapterIndex + 1).catch(() => {});
   }
 
+  // 章节内预取：边读边把当前章后续 N 页在后台备好，翻页时浏览器直接从缓存取 → 零等待
+  function maybePrefetchCurrent() {
+    if (!preloadSettings.enabled || !pages.length) return;
+    const start = current + 1;
+    if (start >= pages.length) return;
+    const slice = pages.slice(start, start + preloadSettings.preloadCount);
+    if (!slice.length) return;
+    preloadImages(currentChapter, slice, slice.length);
+  }
+
   function showBoundaryToast(msg) {
     if (!chapterToastEnabled) return;
     toastClosable(msg, 'info', 3000);
@@ -2226,6 +2236,7 @@ function initReader() {
     }
     current = i;
     maybePreload(); // 翻页时检查是否预加载下一章
+    maybePrefetchCurrent(); // 章节内后续 N 页后台预取，翻页零等待
     stage.scrollTop = 0;
     stage.innerHTML = '';
     const spinner = document.createElement('div');

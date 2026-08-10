@@ -109,7 +109,9 @@ if os.path.isdir(src_dir):
     if os.path.isfile(zip_path):
         os.remove(zip_path)
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as z:
-        for base, _dirs, files in os.walk(src_dir):
+        # 不把运行时生成的用户数据打进发行包：UserData 含 WebView2 缓存与已下载漫画，可达 GB 级
+        for base, dirs, files in os.walk(src_dir):
+            dirs[:] = [d for d in dirs if d not in ("UserData", "TempCache")]
             for name in files:
                 fp = os.path.join(base, name)
                 z.write(fp, os.path.relpath(fp, src_dir))

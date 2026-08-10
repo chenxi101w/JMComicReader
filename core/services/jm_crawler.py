@@ -642,25 +642,9 @@ class JMCrawler:
                 except Exception as e:
                     print(f"处理专辑信息失败: {e}, album: {album}")
 
-            # 关键词搜索结果通常不带 tags，批量补全详情以显示标签
-            if comics:
-                try:
-                    ids_to_enrich = [c["id"] for c in comics if c.get("id")]
-                    details = self.get_search_result_details(ids_to_enrich)
-                    for c in comics:
-                        detail = details.get(str(c["id"])) or {}
-                        if detail.get("tags"):
-                            c["tags"] = detail["tags"]
-                        if detail.get("title"):
-                            c["title"] = detail["title"]
-                        if detail.get("author"):
-                            c["author"] = detail["author"]
-                        if detail.get("favorites") is not None:
-                            c["favorites"] = detail["favorites"]
-                        if detail.get("pages"):
-                            c["pages"] = detail["pages"]
-                except Exception as e:
-                    print(f"关键词搜索补全详情失败: {e}")
+            # 关键词搜索不再批量补全详情：之前为显示标签对每个结果都并发抓
+            # album_detail，导致 3s 变 5s+。标签/完整信息可在详情页单独获取，
+            # 或前端对可见卡片调用 /api/search/enrich 按需补充。
 
             comics.sort(
                 key=lambda x: self._parse_count(x.get("favorites", 0)),

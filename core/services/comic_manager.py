@@ -24,11 +24,16 @@ from core.models.database import (
 class ComicManager:
     """本地漫画生命周期管理。"""
 
+    # 目录索引做成类级共享缓存：下载流程会在另一个 ComicManager 实例里写库并
+    # invalid_index，只有共享缓存才能让 App 主实例立即看到新下载的漫画。
+    _index_cache: Optional[Dict[int, str]] = None
+
     def __init__(self):
         self.base_dir = BASE_DIR
         self.downloaded_dir = DOWNLOAD_DIR
         os.makedirs(self.downloaded_dir, exist_ok=True)
-        self._index_cache: Optional[Dict[int, str]] = None
+        # 章节顺序联网取一次即缓存：本地阅读不应对 JM 在线状态有依赖（离线也能读）
+        self._chapter_order_cache: Dict[int, Optional[List[str]]] = {}
 
     # ─── 路径/图片辅助 ─────────────────────────────────────
     def _build_index(self) -> Dict[int, str]:
@@ -48,15 +53,22 @@ class ComicManager:
         return idx
 
     def _get_index(self) -> Dict[int, str]:
-        if self._index_cache is None:
-            self._index_cache = self._build_index()
-        return self._index_cache
+        if ComicManager._index_cache is None:
+            ComicManager._index_cache = self._build_index()
+        return ComicManager._index_cache
 
     def _invalidate_index(self) -> None:
-        self._index_cache = None
+        ComicManager._index_cache = None
 
     def _find_downloaded_dir(self, jm_id: int) -> Optional[str]:
-        return self._get_index().get(jm_id)
+        idx = self._get_index()
+        found = idx.get(jm_id)
+        if found:
+            return found
+        # 缓存可能过期（如下载由另一 ComicManager 实例完成），主动重建一次
+        self._invalidate_index()
+        idx = self._get_index()
+        return idx.get(jm_id)
 
     def _comic_already_finalized(self, jm_id: int) -> bool:
         return self._find_downloaded_dir(jm_id) is not None
@@ -274,14 +286,34 @@ class ComicManager:
 
     # ─── 章节 / 页面 ──────────────────────────────────────
 
-    def _get_chapter_order_from_jm(self, jm_id: int) -> Optional[List[str]]:
+    def _get_chapter_order_from_jm(self, jm_id: int, use_cache: bool = True) -> Optional[List[str]]:
+        # 章节顺序联网取一次即可，结果进程内缓存：本地阅读不应每翻一页都打 JM，
+        # 且 JM 不可达时（离线）直接回落本地顺序，避免卡顿。
+        if use_cache and jm_id in self._chapter_order_cache:
+            return self._chapter_order_cache[jm_id]
         try:
             client = jmcomic.JmOption.default().new_jm_client()
             album = client.get_album_detail(jm_id)
-            return [str(p.photo_id) for p in album]
+            order = [str(p.photo_id) for p in album]
         except Exception as e:
             print(f"从JM获取章节顺序失败 {jm_id}: {e}")
-            return None
+            order = None
+        if use_cache:
+            self._chapter_order_cache[jm_id] = order
+        return order
+
+    def is_local_chapter(self, jm_id: int, chapter_id: Optional[str]) -> bool:
+        """轻量本地校验章节 id（不联网）：单章用 '1'；多章必须是漫画根目录下真实子目录名。"""
+        if not chapter_id:
+            return True
+        if ".." in chapter_id or "/" in chapter_id or "\\" in chapter_id or os.path.sep in chapter_id:
+            return False
+        comic_dir = self._find_downloaded_dir(jm_id)
+        if not comic_dir:
+            return False
+        if chapter_id == "1":
+            return True
+        return os.path.isdir(os.path.join(comic_dir, chapter_id))
 
     def get_comic_chapters(self, jm_id: int) -> List[Dict]:
         comic_dir = self._find_downloaded_dir(jm_id)

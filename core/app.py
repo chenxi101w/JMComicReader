@@ -908,11 +908,11 @@ def read_comic_chapter(jm_id, chapter_id):
 def get_comic_page(jm_id, page_num):
     try:
         chapter_id = request.args.get("chapter", None)
-        # 纵深防御：chapter 必须是真实存在的章节 id，拒绝任意字符串（防路径遍历）
-        if chapter_id is not None:
-            valid = {str(c["id"]) for c in comic_manager.get_comic_chapters(jm_id)}
-            if chapter_id not in valid:
-                return jsonify({"success": False, "message": "章节不存在"}), 400
+        # 轻量本地校验章节 id（不联网）：原逻辑每翻一页都调 get_comic_chapters，
+        # 而多章漫画的 get_comic_chapters 会联网抓 JM 章节顺序 → 每翻一页卡好几秒。
+        # 这里改成只做本地目录校验，路径越界由 get_comic_page_path 的 realpath 兜底。
+        if not comic_manager.is_local_chapter(jm_id, chapter_id):
+            return jsonify({"success": False, "message": "章节不存在"}), 400
         page_path = comic_manager.get_comic_page_path(jm_id, page_num, chapter_id)
         if page_path and os.path.exists(page_path):
             return send_file(page_path)

@@ -95,6 +95,49 @@ def _cleanup_progress(download_id: str) -> None:
         _dl_progress.pop(download_id, None)
 
 
+def _comic_title(jm_id: int) -> str:
+    """已下载漫画的标题（取不到时退化为 JM-<id>）。直接单条查询，不 materialize 全列表。"""
+    meta = comic_manager.get_comic_meta(jm_id) or {}
+    return meta.get("title") or f"JM-{jm_id}"
+
+
+# ─── 下载并发控制 ────────────────────────────────────────────
+# 全局线程池：限制同时进行的下载任务数（对应设置项 max_concurrent_downloads）。
+# 单本与批量下载都提交到这里，天然保证总并发不超过上限，避免无限制起线程同时打 JM。
+_dl_executor = None
+
+
+def _get_dl_executor():
+    global _dl_executor
+    if _dl_executor is None:
+        try:
+            limit = int(get_system_config("max_concurrent_downloads") or "3")
+        except (ValueError, TypeError):
+            limit = 3
+        limit = max(1, min(16, limit))
+        _dl_executor = ThreadPoolExecutor(max_workers=limit, thread_name_prefix="jm-dl")
+    return _dl_executor
+
+
+def _run_download_task(jm_id, comic_info, download_id, category_ids):
+    """下载任务实体（被线程池调用）。成功 / 失败都负责进度清理。"""
+    try:
+        download_manager.download_comic(
+            jm_id, comic_info,
+            lambda p, s, m: _update_progress(download_id, p, s, m),
+        )
+        if category_ids:
+            set_comic_categories(jm_id, category_ids)
+        add_download_history(jm_id, comic_info.get("title", ""), "completed")
+        # 短暂保留以便前端提示，随后移出"进行中"列表
+        threading.Timer(2.0, _cleanup_progress, args=(download_id,)).start()
+    except Exception as e:
+        _update_progress(download_id, 0, "error", str(e))
+        add_download_history(jm_id, comic_info.get("title", ""), "failed", str(e))
+        # 失败任务同样延时清理，避免无限残留（保留 30s 供前端提示错误）
+        threading.Timer(30.0, _cleanup_progress, args=(download_id,)).start()
+
+
 # ─── 页面路由 ──────────────────────────────────────────────
 
 @app.route("/")
@@ -543,11 +586,9 @@ def recommend():
 @app.route("/api/cover/<int:jm_id>")
 def get_comic_cover(jm_id):
     try:
-        if comic_manager.is_comic_downloaded(jm_id):
-            for c in comic_manager.get_downloaded_comics():
-                if c["id"] == jm_id and c.get("cover_path"):
-                    if os.path.exists(c["cover_path"]):
-                        return send_file(c["cover_path"])
+        meta = comic_manager.get_comic_meta(jm_id)
+        if meta and meta.get("cover_path") and os.path.exists(meta["cover_path"]):
+            return send_file(meta["cover_path"])
         cover_url = jm_crawler.get_cover_url(jm_id)
         if cover_url:
             return jsonify({"success": True, "data": {
@@ -562,10 +603,9 @@ def get_comic_cover(jm_id):
 @app.route("/api/cover/downloaded/<int:jm_id>")
 def get_downloaded_comic_cover(jm_id):
     try:
-        for c in comic_manager.get_downloaded_comics():
-            if c["id"] == jm_id and c.get("cover_path"):
-                if os.path.exists(c["cover_path"]):
-                    return send_file(c["cover_path"])
+        meta = comic_manager.get_comic_meta(jm_id)
+        if meta and meta.get("cover_path") and os.path.exists(meta["cover_path"]):
+            return send_file(meta["cover_path"])
         return jsonify({"success": False, "message": "封面不存在"})
     except Exception as e:
         return jsonify({"success": False, "message": f"获取封面失败: {str(e)}"})
@@ -593,25 +633,7 @@ def download_comic(jm_id):
                 "jm_id": jm_id, "title": comic_info.get("title", ""),
             }
 
-        def _task():
-            try:
-                download_manager.download_comic(
-                    jm_id, comic_info,
-                    lambda p, s, m: _update_progress(download_id, p, s, m),
-                )
-                if category_ids:
-                    set_comic_categories(jm_id, category_ids)
-                add_download_history(jm_id, comic_info.get("title", ""), "completed")
-                # 短暂保留以便前端提示，随后移出"进行中"列表
-                threading.Timer(2.0, _cleanup_progress, args=(download_id,)).start()
-            except Exception as e:
-                _update_progress(download_id, 0, "error", str(e))
-                add_download_history(jm_id, comic_info.get("title", ""), "failed", str(e))
-                # 失败任务同样延时清理，避免无限残留（保留 30s 供前端提示错误）
-                threading.Timer(30.0, _cleanup_progress, args=(download_id,)).start()
-
-        t = threading.Thread(target=_task, daemon=True)
-        t.start()
+        _get_dl_executor().submit(_run_download_task, jm_id, comic_info, download_id, list(category_ids))
         return jsonify({"success": True, "download_id": download_id, "message": "下载任务已启动"})
     except Exception as e:
         return jsonify({"success": False, "message": f"下载失败: {str(e)}"})
@@ -636,6 +658,7 @@ def download_batch():
             return jsonify({"success": False, "message": "没有有效的漫画 ID"})
 
         category_ids = _parse_category_ids(request)
+        ex = _get_dl_executor()
 
         results = []
         for jm_id in jm_ids:
@@ -655,24 +678,7 @@ def download_batch():
                     "jm_id": jm_id, "title": comic_info.get("title", ""),
                 }
 
-            def _task(_id=jm_id, _info=comic_info, _did=download_id, _cids=list(category_ids)):
-                try:
-                    download_manager.download_comic(
-                        _id, _info,
-                        lambda p, s, m: _update_progress(_did, p, s, m),
-                    )
-                    if _cids:
-                        set_comic_categories(_id, _cids)
-                    add_download_history(_id, _info.get("title", ""), "completed")
-                    threading.Timer(2.0, _cleanup_progress, args=(_did,)).start()
-                except Exception as e:
-                    _update_progress(_did, 0, "error", str(e))
-                    add_download_history(_id, _info.get("title", ""), "failed", str(e))
-                    # 失败任务同样延时清理，避免无限残留
-                    threading.Timer(30.0, _cleanup_progress, args=(_did,)).start()
-
-            t = threading.Thread(target=_task, daemon=True)
-            t.start()
+            ex.submit(_run_download_task, jm_id, comic_info, download_id, list(category_ids))
             results.append({"jm_id": jm_id, "status": "downloading", "download_id": download_id})
 
         return jsonify({"success": True, "data": results})
@@ -857,11 +863,7 @@ def read_comic(jm_id):
         chapters = comic_manager.get_comic_chapters(jm_id)
         if not chapters:
             return jsonify({"success": False, "message": "没有可用的章节"})
-        title = f"JM-{jm_id}"
-        for c in comic_manager.get_downloaded_comics():
-            if c["id"] == jm_id:
-                title = c["title"]
-                break
+        title = _comic_title(jm_id)
         return jsonify({
             "success": True,
             "data": {
@@ -885,11 +887,7 @@ def read_comic_chapter(jm_id, chapter_id):
         target = next((ch for ch in chapters if ch["id"] == chapter_id), None)
         if not target:
             return jsonify({"success": False, "message": "章节不存在"})
-        title = f"JM-{jm_id}"
-        for c in comic_manager.get_downloaded_comics():
-            if c["id"] == jm_id:
-                title = c["title"]
-                break
+        title = _comic_title(jm_id)
         return jsonify({
             "success": True,
             "data": {
@@ -1042,6 +1040,13 @@ def save_settings():
         if any(k.startswith("recommend_") for k in data.keys()):
             _recommend_cache["payload"] = None
             _recommend_cache["sig"] = ""
+        # 下载并发数变更 → 重建下载线程池（下次提交即按新上限；在飞任务不受影响）
+        if "max_concurrent_downloads" in data:
+            global _dl_executor
+            old = _dl_executor
+            _dl_executor = None
+            if old is not None:
+                old.shutdown(wait=False)
         return jsonify({"success": True})
     except Exception as e:
         return jsonify({"success": False, "message": str(e)})

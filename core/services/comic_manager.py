@@ -271,6 +271,38 @@ class ComicManager:
             return subdir
         return comic_dir
 
+    def get_comic_meta(self, jm_id: int) -> Optional[Dict]:
+        """单本已下载漫画的元信息（title/author/tags/cover_path 等），一次 DB 查询 + 索引直取。
+
+        替代在多个接口里反复调用 `get_downloaded_comics()` 把整张列表与全目录 materialize
+        一遍只为取某本的 title/cover_path。返回 None 表示未下载（DB 无记录或磁盘目录缺失）。
+        """
+        conn = _get_conn()
+        row = conn.execute(
+            "SELECT title, author, tags, favorites, pages, chapter_count, cover_path, file_size "
+            "FROM downloaded_comics WHERE jm_id = ?",
+            (jm_id,),
+        ).fetchone()
+        if not row:
+            return None
+        comic_dir = self._find_downloaded_dir(jm_id)
+        if not comic_dir:
+            return None
+        cover_path = None
+        if os.path.exists(os.path.join(comic_dir, "cover.jpg")):
+            cover_path = os.path.join(comic_dir, "cover.jpg")
+        return {
+            "id": jm_id,
+            "title": row["title"],
+            "author": row["author"],
+            "tags": row["tags"].split(",") if row["tags"] else [],
+            "favorites": row["favorites"],
+            "pages": row["pages"] or 0,
+            "chapter_count": row["chapter_count"] or 0,
+            "cover_path": cover_path,
+            "file_size": row["file_size"],
+        }
+
     def get_comic_pages(self, jm_id: int) -> int:
         conn = _get_conn()
         row = conn.execute("SELECT pages FROM downloaded_comics WHERE jm_id = ?", (jm_id,)).fetchone()

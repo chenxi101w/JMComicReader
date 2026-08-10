@@ -141,6 +141,7 @@ jmcomicreader-windows/
 
 ## 🗺 更新日志
 
+- **v2.4.9** — 代码优化：封面/阅读接口去全量扫描、下载任务去重、批量下载真正限并发（设置项 `max_concurrent_downloads` 生效）。详见 [docs/CHANGELOG.md](docs/CHANGELOG.md)
 - **v2.4.8** — 修复推荐页标签消失（标签按需补全扩展到推荐页）。详见 [docs/CHANGELOG.md](docs/CHANGELOG.md)
 - **v2.4.7** — 修复搜索结果标签消失（前端接上 `/api/search/enrich` 按需补标签）。详见 [docs/CHANGELOG.md](docs/CHANGELOG.md)
 - **v2.4.6** — 搜索优化：客户端连接复用 / 120s 结果缓存 / 封面直连 CDN。详见 [docs/CHANGELOG.md](docs/CHANGELOG.md)

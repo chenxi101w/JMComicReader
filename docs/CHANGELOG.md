@@ -26,6 +26,28 @@
 
 ---
 
+## v2.4.9 — 2026-08-10
+
+### 更新内容
+- 版本号 2.4.8 → 2.4.9
+- 代码优化（性能 + 整洁，**不影响功能行为**）：
+  - 已下载漫画的封面 / 阅读接口原本每次都调用 `get_downloaded_comics()` 把整张列表与全目录 materialize 一遍只为取单本的 `title` / `cover_path`；现改为 `ComicManager.get_comic_meta()` 单条 DB 查询 + 索引直取，去掉 O(N) 重复全量扫描。
+  - 抽公共函数去重：`_comic_title`（阅读接口标题查找）、`_run_download_task`（单本 / 批量下载任务实体）。
+  - 批量下载真正限制并发：新增全局 `ThreadPoolExecutor`（`max_workers` = 设置项 `max_concurrent_downloads`，默认 3），单本与批量下载都提交到这里，总并发受控；设置项变更时自动重建线程池。**此前 `max_concurrent_downloads` 设置项一直未生效，批量下载会无限制起线程同时打 JM。**
+
+### 功能简介
+- 同 v2.4.8；下载并发更稳、已下载漫画的封面 / 阅读接口更省资源。
+
+### 使用说明
+- 解压 `JMComicReader_v2.4.9_portable.zip` → 双击 `JMComicReader.exe`
+- 需要 Windows 10/11（自带 WebView2 运行时）
+- 首次启动在 exe 同级目录自动生成 `UserData/`
+
+### 已知问题
+- 暂无
+
+---
+
 ## v2.4.8 — 2026-08-10
 
 ### 更新内容

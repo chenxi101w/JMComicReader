@@ -767,6 +767,60 @@ function cardTagsHtml(tags, selectedTags = null, favs = null) {
   return html;
 }
 
+/* 绑定单张卡片内标签的点击（收藏切换）与右键（上下文菜单） */
+function bindCardTagHandlers(card) {
+  card.querySelectorAll('.comic-card__tag').forEach(tg => {
+    tg.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const t = tg.dataset.tag;
+      if (FavTags.list().includes(t)) { FavTags.remove(t); tg.classList.remove('on'); }
+      else { FavTags.add(t); tg.classList.add('on'); }
+    });
+    tg.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      showTagContextMenu(e.clientX, e.clientY, tg.dataset.tag, tg);
+    });
+  });
+}
+
+// 搜索/推荐结果补标签：v2.4.5 起关键词搜索不再逐卡抓详情，tags 字段为空；
+// 推荐里的关键词种子同理。这里渲染后对缺标签的卡片批量调 /api/search/enrich 回填，
+// 搜索/推荐均保持即时，标签随后补齐。gridEl 限定作用域，避免两 grid 同 id 卡片串味。
+const _enrichTimers = {};
+function enrichSearchCards(list, gridEl) {
+  const root = gridEl || document.getElementById('comicGrid');
+  if (!root) return;
+  if (!list || !list.length) return;
+  const need = list.filter(c => (c.id || c.album_id) && (!c.tags || !c.tags.length));
+  if (!need.length) return;
+  const ids = need.map(c => c.id || c.album_id).filter(Boolean);
+  const chunks = [];
+  for (let i = 0; i < ids.length; i += 12) chunks.push(ids.slice(i, i + 12));
+  clearTimeout(_enrichTimers[root.id]);
+  _enrichTimers[root.id] = setTimeout(async () => {
+    for (const chunk of chunks) {
+      try {
+        const r = await api('GET', `/api/search/enrich?ids=${chunk.join(',')}`);
+        if (!r || !r.success || !r.data) continue;
+        Object.values(r.data).forEach(d => {
+          const id = String(d.id);
+          const src = list.find(c => String(c.id || c.album_id) === id);
+          if (src) src.tags = d.tags || [];
+          const card = root.querySelector(`.comic-card[data-jm-id="${id}"]`);
+          if (!card) return;
+          card.dataset.tags = (d.tags || []).join(',');
+          const tagsEl = card.querySelector('.comic-card__tags');
+          if (tagsEl) {
+            tagsEl.innerHTML = cardTagsHtml(d.tags || [], new Set(), FavTags.list());
+            bindCardTagHandlers(card);
+          }
+        });
+      } catch (e) { /* 补标签失败静默，标签留空不影响主流程 */ }
+    }
+  }, 350);
+}
+
 /* 漫画卡片渲染（模块级，搜索页 / 主页推荐 / 屏蔽预览 共用）
    opts.onAuthorClick(author)：点击作者名时的回调；不传则仅展示不可点。 */
 function renderCards(list, append = true, target = null, opts = {}) {
@@ -789,7 +843,7 @@ function renderCards(list, append = true, target = null, opts = {}) {
     card.dataset.pages = String(c.pages || 0);
     card.style.animationDelay = (Math.min(i, 15) * 0.03) + 's';
     card.innerHTML = `
-      <img class="comic-card__cover" data-cover="${id}" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='3' height='4'%3E%3C/svg%3E">
+      <img class="comic-card__cover" ${c.cover ? `src="${escapeHtml(c.cover)}"` : `data-cover="${id}" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='3' height='4'%3E%3C/svg%3E"`}>
       <div class="comic-card__body">
         <div class="comic-card__title">${escapeHtml(c.title || '未命名漫画')}</div>
         ${author ? `<div class="comic-card__meta"><span class="author-name" data-author="${escapeHtml(author)}">${escapeHtml(author)}</span></div>` : ''}
@@ -819,19 +873,7 @@ function renderCards(list, append = true, target = null, opts = {}) {
       e.stopPropagation();
       blockWork(id, c.title);
     };
-    card.querySelectorAll('.comic-card__tag').forEach(tg => {
-      tg.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const t = tg.dataset.tag;
-        if (FavTags.list().includes(t)) { FavTags.remove(t); tg.classList.remove('on'); }
-        else { FavTags.add(t); tg.classList.add('on'); }
-      });
-      tg.addEventListener('contextmenu', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        showTagContextMenu(e.clientX, e.clientY, tg.dataset.tag, tg);
-      });
-    });
+    bindCardTagHandlers(card);
     const authorName = card.querySelector('.author-name');
     if (authorName && onAuthorClick) {
       authorName.addEventListener('click', (e) => {
@@ -1096,6 +1138,7 @@ function initSearch() {
       loading.style.display = 'none';
       if (res.success && res.data && res.data.length) {
         renderCards(res.data, true, grid, searchCardOpts); total = res.data.length;
+        enrichSearchCards(res.data, grid); // 搜索结果渲染后按需补标签（v2.4.5 起关键词搜索不再带 tags）
         countEl.textContent = `${total} 个结果`;
         if (!hasTag && !hasAuthor) {
           const hasMore = res.data.length >= 20;
@@ -1306,6 +1349,7 @@ function initHome() {
       renderCards(data, false, recommendGrid, {
         onAuthorClick: (author) => { location.href = `/search?author=${encodeURIComponent(author)}`; }
       });
+      enrichSearchCards(data, recommendGrid); // 推荐里关键词种子同样不带 tags，按需补
       attachRipple(recommendGrid);
       setupLazyCovers(recommendGrid);
       if (recommendNote) {

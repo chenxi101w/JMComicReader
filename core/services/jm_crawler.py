@@ -6,6 +6,7 @@ JM 漫画爬虫服务。
 import concurrent.futures
 import threading
 import io
+import copy
 import json
 import os
 import re
@@ -83,6 +84,14 @@ class JMCrawler:
         self._detail_save_in_progress = False
         # 内存详情缓存的读写锁，避免并发搜索请求下字典迭代/重建竞争
         self._detail_cache_lock = threading.Lock()
+        # 客户端复用：保留 HTTP keep-alive 连接池，重复搜索/翻页/封面域名解析显著变快
+        self._client = None
+        self._client_sig = None
+        self._client_lock = threading.Lock()
+        # 搜索结果内存缓存：相同查询 / 翻回页即时返回（JM 限流或抽风时也更稳）
+        self._search_cache = {}
+        self._search_cache_lock = threading.Lock()
+        self._search_cache_ttl = 120  # 秒
 
     def _build_default_option_content(self) -> Dict:
         return {
@@ -212,6 +221,31 @@ class JMCrawler:
     def _build_client(self):
         return self._build_option().build_jm_client()
 
+    def _client_signature(self):
+        """客户端可复用的签名：option 文件 mtime + 代理配置。任一变化即重建。"""
+        try:
+            mtime = os.path.getmtime(self.option_file) if os.path.exists(self.option_file) else 0
+        except Exception:
+            mtime = 0
+        try:
+            proxy_enabled = get_system_config("proxy_enabled")
+            proxy_url = (get_system_config("proxy_url") or "").strip()
+        except Exception:
+            proxy_enabled = None
+            proxy_url = ""
+        return (mtime, proxy_enabled, proxy_url)
+
+    def _get_client(self):
+        """复用 jmcomic 客户端以保留 keep-alive 连接；代理 / option 变化时自动重建。"""
+        sig = self._client_signature()
+        with self._client_lock:
+            if self._client is not None and self._client_sig == sig:
+                return self._client
+            client = self._build_client()
+            self._client = client
+            self._client_sig = sig
+            return client
+
     def _parse_count(self, value) -> int:
         if value is None:
             return 0
@@ -298,7 +332,7 @@ class JMCrawler:
     def get_comic_info(self, album_id: int) -> Optional[Dict]:
         """获取漫画详细信息。"""
         try:
-            client = self._build_client()
+            client = self._get_client()
             album = client.get_album_detail(album_id)
             if not album:
                 return None
@@ -492,7 +526,7 @@ class JMCrawler:
         # id 都会重跑整个线程池，造成 O(N^2) 重复请求（30 个结果 ≈ 465 次网络
         # 请求），这是此前"开了代理能搜但极慢"的根因。
         if missing:
-            client = self._build_client()
+            client = self._get_client()
             max_workers = min(16, len(missing))
 
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -586,7 +620,15 @@ class JMCrawler:
             if time_range not in ("a", "t", "w", "m"):
                 time_range = "a"
 
-            client = self._build_client()
+            # 搜索结果内存缓存：相同查询 / 翻回页直接返回，跳过 JM 网络请求
+            cache_key = (keyword, sort_order, order_by, time_range, page)
+            with self._search_cache_lock:
+                entry = self._search_cache.get(cache_key)
+                if entry and (time.time() - entry[0]) < self._search_cache_ttl:
+                    print(f"搜索命中缓存: {keyword!r} p{page}")
+                    return copy.deepcopy(entry[1])
+
+            client = self._get_client()
 
             try:
                 search_results = self._search_site(
@@ -638,6 +680,14 @@ class JMCrawler:
                 try:
                     comic_info = self._extract_search_result(album)
                     if comic_info:
+                        aid = comic_info.get("id")
+                        if aid:
+                            # 封面 URL 是纯本地构造（无网络），直接在结果里带上，
+                            # 前端即可跳过逐个 /api/cover 往返，浏览器直连 JM CDN 拉图。
+                            try:
+                                comic_info["cover"] = JmcomicText.get_album_cover_url(aid)
+                            except Exception:
+                                pass
                         comics.append(comic_info)
                 except Exception as e:
                     print(f"处理专辑信息失败: {e}, album: {album}")
@@ -650,6 +700,14 @@ class JMCrawler:
                 key=lambda x: self._parse_count(x.get("favorites", 0)),
                 reverse=(sort_order == "desc"),
             )
+            # 写入搜索结果缓存（深拷贝隔离，避免调用方 postprocess 原地归一化污染缓存）
+            with self._search_cache_lock:
+                self._search_cache[cache_key] = (time.time(), comics)
+                if len(self._search_cache) > 200:
+                    items = sorted(
+                        self._search_cache.items(), key=lambda kv: kv[1][0], reverse=True
+                    )
+                    self._search_cache = dict(items[:150])
             return comics
 
         except Exception as e:
@@ -681,7 +739,7 @@ class JMCrawler:
         tag_list = [str(t).strip() for t in tags if str(t).strip()]
         if not tag_list:
             return [], {}
-        client = self._build_client()
+        client = self._get_client()
         tag_counts = {tag: 0 for tag in tag_list}
 
         # 1) 并发抓取每个标签的前 2 页，收集候选 id（去重）

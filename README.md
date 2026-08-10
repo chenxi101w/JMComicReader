@@ -25,7 +25,7 @@
 
 ## 📥 下载与运行（绿色版，推荐）
 
-1. 获取 `JMComicReader_v2.4.4_portable.zip`（单一完整包，约 27MB，已含程序本体 + 前端，**不含个人数据**）
+1. 获取 `JMComicReader_v2.4.8_portable.zip`（单一完整包，约 36MB，已含程序本体 + 前端，**不含个人数据**）
    - 仓库 **[Releases](https://github.com/chenxi101w/JMComicReader-windows/releases)** 页面获取
 2. 用 **7-Zip** / 系统自带解压工具解压
 3. 双击 `JMComicReader.exe` 即可使用
@@ -141,6 +141,10 @@ jmcomicreader-windows/
 
 ## 🗺 更新日志
 
+- **v2.4.8** — 修复推荐页标签消失（标签按需补全扩展到推荐页）。详见 [docs/CHANGELOG.md](docs/CHANGELOG.md)
+- **v2.4.7** — 修复搜索结果标签消失（前端接上 `/api/search/enrich` 按需补标签）。详见 [docs/CHANGELOG.md](docs/CHANGELOG.md)
+- **v2.4.6** — 搜索优化：客户端连接复用 / 120s 结果缓存 / 封面直连 CDN。详见 [docs/CHANGELOG.md](docs/CHANGELOG.md)
+- **v2.4.5** — 搜索提速、下载完立即可见、本地翻页即时、章节后台预取。详见 [docs/CHANGELOG.md](docs/CHANGELOG.md)
 - **v2.4.4** — 重新发布（区分已发布的 2.4.3）；内置路径遍历防护、跨域收紧、设置白名单、历史清理守护线程、阅读接口 JSON 化等质量修复。详见 [docs/CHANGELOG.md](docs/CHANGELOG.md)
 - **v2.4.3** — 修复搜索详情补全的 O(N²) 重复请求，搜索速度大幅提升
 - **v2.4.2** — 推荐独立成「主页」、设置页返回栈、搜索框视觉去线、推荐自定义内容改为关键字 / 标签 / 作者三区块

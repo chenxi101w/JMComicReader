@@ -4,9 +4,9 @@
 
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%2F11-0078D4?logo=windows&logoColor=white)](https://www.microsoft.com/windows)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](docs/LICENSE)
-[![Release](https://img.shields.io/github/v/release/chenxi101w/JMComicReader?label=latest%20release&color=blue)](https://github.com/chenxi101w/JMComicReader/releases)
+[![Release](https://img.shields.io/github/v/release/chenxi101w/JMComicReader?label=latest%20release&color=blue&v=2)](https://github.com/chenxi101w/JMComicReader/releases)
 [![Python](https://img.shields.io/badge/Python-3.13-3776AB?logo=python&logoColor=white)](https://www.python.org)
-[![Downloads](https://img.shields.io/github/downloads/chenxi101w/JMComicReader/total?label=downloads&color=orange)](https://github.com/chenxi101w/JMComicReader/releases)
+[![Downloads](https://img.shields.io/github/downloads/chenxi101w/JMComicReader/total?label=downloads&color=orange&v=2)](https://github.com/chenxi101w/JMComicReader/releases)
 
 ---
 

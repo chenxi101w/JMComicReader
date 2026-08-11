@@ -1,11 +1,50 @@
-# JMComicReader · JM 漫画阅读器（Windows）
+# 📚 JMComicReader · Windows 桌面漫画阅读器
 
-> 基于 **pywebview + Flask** 的 Windows 桌面漫画阅读 / 下载 / 管理工具。移动优先的响应式界面，支持搜索、在线阅读、本地下载、书架管理与智能推荐。
+> **一个绿色、免安装的 JM 漫画本地阅读与管理工具** —— 搜索、在线阅读、批量下载、书架管理、智能推荐，全部在桌面搞定。基于 pywebview + Flask，移动优先的响应式界面。
 
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%2F11-0078D4?logo=windows&logoColor=white)](https://www.microsoft.com/windows)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](docs/LICENSE)
-[![Release](https://img.shields.io/github/v/release/chenxi101w/JMComicReader-windows?label=latest%20release&color=blue)](https://github.com/chenxi101w/JMComicReader-windows/releases)
+[![Release](https://img.shields.io/github/v/release/chenxi101w/JMComicReader?label=latest%20release&color=blue)](https://github.com/chenxi101w/JMComicReader/releases)
 [![Python](https://img.shields.io/badge/Python-3.13-3776AB?logo=python&logoColor=white)](https://www.python.org)
+[![Downloads](https://img.shields.io/github/downloads/chenxi101w/JMComicReader/total?label=downloads&color=orange)](https://github.com/chenxi101w/JMComicReader/releases)
+
+---
+
+## 📑 目录
+
+- [📸 预览](#预览)
+- [✨ 功能一览](#功能一览)
+- [📥 下载与运行](#下载与运行)
+- [🚀 功能详解](#功能详解)
+- [⚠️ 注意事项](#注意事项)
+- [🛠 从源码构建](#从源码构建)
+- [📂 项目结构](#项目结构)
+- [🧱 技术栈](#技术栈)
+- [📚 文档](#文档)
+- [🗺 更新日志](#更新日志)
+- [⚠️ 免责声明](#免责声明)
+- [📄 License](#license)
+
+---
+
+## 📸 预览
+
+> 📌 **截图待补充**：将以下三张图放入 `assets/screenshots/` 后，取消下方 HTML 注释包裹即可显示（详见 [GITHUB_SETUP.md](GITHUB_SETUP.md)）。
+>
+> - `home.png` —— 主页 · 智能推荐
+> - `search.png` —— 搜索 · 多维度（关键词 / 标签 / 作者）
+> - `reader.png` —— 阅读器 · 滚轮以鼠标为中心缩放
+
+<!-- 截图到位后取消此注释块
+<div align="center">
+  <img src="assets/screenshots/home.png" width="760" alt="主页 · 智能推荐"/>
+  <p><em>主页 · 基于搜索偏好的「为你推荐」</em></p>
+  <img src="assets/screenshots/search.png" width="760" alt="搜索 · 多维度"/>
+  <p><em>搜索 · 关键词 / 标签 / 作者 三维度</em></p>
+  <img src="assets/screenshots/reader.png" width="760" alt="阅读器 · 滚轮缩放"/>
+  <p><em>阅读器 · 滚轮以鼠标位置为中心缩放、方向键平移</em></p>
+</div>
+-->
 
 ---
 
@@ -15,8 +54,8 @@
 |------|------|
 | 🔍 多维度搜索 | 关键词 / 标签 / 作者三种方式，结果一目了然 |
 | ⭐ 搜索偏好库 | 历史、标签、作者可收藏、可编辑、可恢复（误删进回收站），一键回填搜索框 |
-| 📖 在线阅读 | 章节切换、图片预加载、缩放、拖拽、返回顶部 |
-| 💾 下载与书架 | 单本 / 批量下载，书架统一管理 |
+| 📖 在线阅读 | 章节切换、图片预加载、以鼠标为中心的滚轮缩放、拖拽平移、返回顶部 |
+| 💾 下载与书架 | 单本 / 批量下载（真正限并发），书架统一管理 |
 | 🧭 智能推荐 | 基于你的搜索偏好（关键字 / 标签 / 作者）生成「为你推荐」主页 |
 | 🎨 丰富设置 | 主题（亮 / 暗 / 跟随系统）、代理、推荐源、下载路径等 |
 | 📦 数据可携带 | 程序与个人数据分离，整个文件夹拷贝即完成迁移 / 备份 |
@@ -26,7 +65,7 @@
 ## 📥 下载与运行（绿色版，推荐）
 
 1. 获取 `JMComicReader_v2.4.10_portable.zip`（单一完整包，约 28MB，已含程序本体 + 前端，**不含个人数据**）
-   - 仓库 **[Releases](https://github.com/chenxi101w/JMComicReader-windows/releases)** 页面获取
+   - 仓库 **[Releases](https://github.com/chenxi101w/JMComicReader/releases)** 页面获取
 2. 用 **7-Zip** / 系统自带解压工具解压
 3. 双击 `JMComicReader.exe` 即可使用
 
@@ -50,11 +89,11 @@
 
 ### 3. 在线阅读
 - 点开漫画 → 进入章节列表 → 点章节开始阅读。
-- 阅读页支持：**章节切换**、**图片预加载**（翻页不转圈）、**缩放**、**拖拽**平移、**返回顶部**。
+- 阅读页支持：**章节切换**、**图片预加载**（翻页不转圈）、**以鼠标为中心的滚轮缩放**、**拖拽**平移、**返回顶部**。
 - 阅读进度自动记录，下次打开接着看。
 
 ### 4. 下载与书架
-- 漫画详情页可**单本下载**，书架页支持**批量下载**。
+- 漫画详情页可**单本下载**，书架页支持**批量下载**（并发受 `max_concurrent_downloads` 控制）。
 - 下载的内容在「书架」统一管理，可离线阅读、可删除。
 - 下载路径在「设置」里自定义。
 
@@ -111,6 +150,7 @@ jmcomicreader-windows/
 ├─ web/                    # 前端（Jinja2 模板 + 原生 JS/CSS）
 ├─ docs/                   # 文档（API / 架构 / 分享 / 审查 / 更新日志）
 ├─ build/                  # 打包类（spec / 构建脚本 / 依赖清单）
+├─ assets/                 # 仓库页面素材（截图等）
 ├─ dist_out/               # 构建产物（exe + appdata + 便携 zip，gitignore）
 └─ VERSION                 # 版本号（运行时读取 + 便携包命名）
 ```

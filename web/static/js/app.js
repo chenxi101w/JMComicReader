@@ -2108,6 +2108,8 @@ function initReader() {
   const prevChapBtn = document.getElementById('prevChapBtn');
   const nextChapBtn = document.getElementById('nextChapBtn');
   let pages = [], current = 0, zoom = 1, currentChapter = '1';
+  let currentImg = null; // 当前页 <img>，滚轮缩放时复用（不重建，避免重新发请求）
+  const MIN_ZOOM = 1, MAX_ZOOM = 6;
   let chapters = [], currentChapterIndex = 0, chapterToastEnabled = true;
   // 章节预加载：key=chapterId, value={pages:[], promise, images:[]}
   let preloadCache = {};
@@ -2289,18 +2291,52 @@ function initReader() {
     stage.appendChild(spinner);
     const img = document.createElement('img');
     img.className = 'reader__img';
-    img.style.width = (100 * zoom) + '%';
     img.alt = `第 ${current + 1} 页`;
-    img.style.maxHeight = (100 * zoom) + '%';
-    img.onload = () => { if (spinner.parentNode) spinner.remove(); };
+    // 绝对定位 + 像素宽度驱动缩放：缩放时不重建 img，直接用 transform-friendly 的 width 控制，
+    // 配合 stage 滚动实现「以光标为中心」缩放与自由平移。
+    img.style.position = 'absolute';
+    img.style.left = '0';
+    img.style.top = '0';
+    img.style.width = (stage.clientWidth * zoom) + 'px';
+    img.style.height = 'auto';
+    img.style.maxWidth = 'none';
+    img.style.maxHeight = 'none';
+    img.onload = () => { currentImg = img; if (spinner.parentNode) spinner.remove(); };
     img.src = `/api/comic/${jmId}/page/${pages[i]}?chapter=${encodeURIComponent(currentChapter)}`;
     img.onerror = () => {
       stage.innerHTML = `<div class="empty"><div class="empty__icon"><i class="fas fa-image"></i></div><h3>加载失败</h3><p>章节 ${escapeHtml(currentChapter)} · 第 ${current + 1} 页</p></div>`;
     };
     stage.appendChild(img);
+    currentImg = img;
     document.getElementById('pageInfo').textContent = `${current + 1} / ${pages.length}`;
   }
-  function zoomBy(d) { zoom = Math.min(3, Math.max(0.5, zoom + d)); zoomVal.textContent = Math.round(zoom * 100) + '%'; renderPage(current); }
+
+  // 以 (focalX, focalY) 为锚点缩放：focalX/focalY 为相对 stage 视口的像素坐标；
+  // 缺省时取视野中心（用于 +/- 按钮）。核心：缩放前后保持光标下的图片内容点不动。
+  function applyZoom(newZoom, focalX, focalY) {
+    const img = currentImg;
+    if (!img) return;
+    newZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, newZoom));
+    const sw = stage.clientWidth, sh = stage.clientHeight;
+    if (focalX == null) { focalX = sw / 2; focalY = sh / 2; }
+    const oldW = img.clientWidth, oldH = img.clientHeight;
+    let fX = 0, fY = 0;
+    if (oldW > 0 && oldH > 0) {
+      // 缩放前：光标在图片内容坐标系中的占比
+      fX = (stage.scrollLeft + focalX) / oldW;
+      fY = (stage.scrollTop + focalY) / oldH;
+    }
+    zoom = newZoom;
+    img.style.width = (sw * zoom) + 'px';
+    img.style.height = 'auto';
+    const newW = img.clientWidth, newH = img.clientHeight;
+    if (newW > 0 && newH > 0) {
+      // 让同一内容点回到光标下方
+      stage.scrollLeft = fX * newW - focalX;
+      stage.scrollTop = fY * newH - focalY;
+    }
+    zoomVal.textContent = Math.round(zoom * 100) + '%';
+  }
 
   document.getElementById('prevBtn').onclick = () => renderPage(current - 1);
   document.getElementById('nextBtn').onclick = () => renderPage(current + 1);
@@ -2314,8 +2350,8 @@ function initReader() {
   };
   if (prevChapBtn) prevChapBtn.onclick = () => { if (currentChapterIndex > 0) { loadChapter(currentChapterIndex - 1).then(() => renderPage(pages.length - 1)); } };
   if (nextChapBtn) nextChapBtn.onclick = () => { if (currentChapterIndex < chapters.length - 1) { loadChapter(currentChapterIndex + 1).then(() => renderPage(0)); } };
-  document.getElementById('zoomIn').onclick = () => zoomBy(0.2);
-  document.getElementById('zoomOut').onclick = () => zoomBy(-0.2);
+  document.getElementById('zoomIn').onclick = () => applyZoom(zoom * 1.2);
+  document.getElementById('zoomOut').onclick = () => applyZoom(zoom / 1.2);
   document.getElementById('closeReader').onclick = () => { history.length > 1 ? history.back() : location.href = '/library'; };
 
   // 阅读设置（预加载参数）
@@ -2376,9 +2412,22 @@ function initReader() {
     if (chapTrigger) { chapTrigger.addEventListener('mouseenter', openChap); chapTrigger.addEventListener('click', () => chapSide && chapSide.classList.toggle('open')); }
   }
 
+  // 滚轮缩放：以光标位置为锚点（preventDefault 阻止页面滚动/横向手势返回）
+  stage.addEventListener('wheel', (e) => {
+    if (!currentImg) return;
+    e.preventDefault();
+    const rect = stage.getBoundingClientRect();
+    const fx = e.clientX - rect.left;
+    const fy = e.clientY - rect.top;
+    applyZoom(zoom * (e.deltaY < 0 ? 1.15 : 1 / 1.15), fx, fy);
+  }, { passive: false });
+
   document.addEventListener('keydown', e => {
     if (e.key === 'ArrowLeft') renderPage(current - 1);
     if (e.key === 'ArrowRight') renderPage(current + 1);
+    // 放大后竖向平移阅读（Shift+滚轮不可用时的替代，避免与滚轮缩放冲突）
+    if (e.key === 'ArrowUp') { stage.scrollTop -= 120; e.preventDefault(); }
+    if (e.key === 'ArrowDown') { stage.scrollTop += 120; e.preventDefault(); }
     if (e.key === 'Escape') document.getElementById('closeReader').click();
   });
 }

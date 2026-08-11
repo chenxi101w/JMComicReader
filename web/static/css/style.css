@@ -732,9 +732,8 @@ img { display: block; max-width: 100%; }
 .reader__bar .title { flex: 1; font-size: 14px; font-weight: 600; white-space: nowrap;
   overflow: hidden; text-overflow: ellipsis; }
 .reader__bar button { background: none; border: none; color: #aab3c7; font-size: 18px; padding: 6px; }
-.reader__stage { flex: 1; overflow-y: auto; display: flex; flex-direction: column; align-items: center;
-  gap: 4px; padding: 8px; scroll-behavior: smooth; position: relative; }
-.reader__img { max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; border-radius: 4px; }
+.reader__stage { flex: 1; overflow: auto; position: relative; padding: 0; }
+.reader__img { position: absolute; top: 0; left: 0; display: block; border-radius: 4px; }
 .reader__loading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
   color: #aab3c7; font-size: 30px; pointer-events: none; }
 .reader__loading i { animation: jm-spin 0.9s linear infinite; }

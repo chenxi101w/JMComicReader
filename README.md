@@ -12,21 +12,22 @@
 
 ## 📑 目录
 
-- [📸 预览](#预览)
-- [✨ 功能一览](#功能一览)
-- [📥 下载与运行](#下载与运行)
-- [🚀 功能详解](#功能详解)
-- [⚠️ 注意事项](#注意事项)
-- [🛠 从源码构建](#从源码构建)
-- [📂 项目结构](#项目结构)
-- [🧱 技术栈](#技术栈)
-- [📚 文档](#文档)
-- [🗺 更新日志](#更新日志)
-- [⚠️ 免责声明](#免责声明)
+- [📸 预览](#preview)
+- [✨ 功能一览](#features)
+- [📥 下载与运行](#download)
+- [🚀 功能详解](#usage)
+- [⚠️ 注意事项](#notes)
+- [🛠 从源码构建](#build)
+- [📂 项目结构](#structure)
+- [🧱 技术栈](#tech-stack)
+- [📚 文档](#docs)
+- [🗺 更新日志](#changelog)
+- [⚠️ 免责声明](#disclaimer)
 - [📄 License](#license)
 
 ---
 
+<a id="preview"></a>
 ## 📸 预览
 
 > 📌 **截图待补充**：将以下三张图放入 `assets/screenshots/` 后，取消下方 HTML 注释包裹即可显示（详见 [GITHUB_SETUP.md](GITHUB_SETUP.md)）。
@@ -48,6 +49,7 @@
 
 ---
 
+<a id="features"></a>
 ## ✨ 功能一览
 
 | 功能 | 说明 |
@@ -62,7 +64,10 @@
 
 ---
 
-## 📥 下载与运行（绿色版，推荐）
+<a id="download"></a>
+## 📥 下载与运行
+
+> 绿色版，推荐。无需安装，解压即用。
 
 1. 获取 `JMComicReader_v2.4.10_portable.zip`（单一完整包，约 28MB，已含程序本体 + 前端，**不含个人数据**）
    - 仓库 **[Releases](https://github.com/chenxi101w/JMComicReader/releases)** 页面获取
@@ -75,7 +80,8 @@
 
 ---
 
-## 🚀 功能详解（怎么用）
+<a id="usage"></a>
+## 🚀 功能详解
 
 ### 1. 搜索漫画
 - 顶部搜索框支持 **三种维度**：直接输关键词、切到「标签」或「作者」标签页搜索。
@@ -113,6 +119,7 @@
 
 ---
 
+<a id="notes"></a>
 ## ⚠️ 注意事项
 
 - **杀软拦截**：解压后个别杀软可能拦 `JMComicReader.exe`，放行即可。这是纯本地程序，**不会上传任何数据**。
@@ -121,6 +128,7 @@
 
 ---
 
+<a id="build"></a>
 ## 🛠 从源码构建
 
 ```bash
@@ -141,6 +149,7 @@ build_venv\Scripts\python -m PyInstaller build/JMComicReader.spec ^
 
 ---
 
+<a id="structure"></a>
 ## 📂 项目结构
 
 ```
@@ -157,6 +166,7 @@ jmcomicreader-windows/
 
 ---
 
+<a id="tech-stack"></a>
 ## 🧱 技术栈
 
 - **后端**：Python 3.13 · Flask · jmcomic
@@ -166,6 +176,7 @@ jmcomicreader-windows/
 
 ---
 
+<a id="docs"></a>
 ## 📚 文档
 
 | 文档 | 说明 |
@@ -179,6 +190,7 @@ jmcomicreader-windows/
 
 ---
 
+<a id="changelog"></a>
 ## 🗺 更新日志
 
 - **v2.4.10** — 阅读器新增滚轮缩放：以鼠标位置为中心放大/缩小当前页；缩放复用同一张图不再重加载；放大后方向键 ↑/↓ 竖向平移。详见 [docs/CHANGELOG.md](docs/CHANGELOG.md)
@@ -193,12 +205,14 @@ jmcomicreader-windows/
 
 ---
 
+<a id="disclaimer"></a>
 ## ⚠️ 免责声明
 
 本项目仅用于**个人本地漫画阅读与管理**，不提供任何漫画内容的存储与分发。使用过程中请遵守所在地区法律法规及相关网站的使用条款。
 
 ---
 
+<a id="license"></a>
 ## 📄 License
 
 [MIT](docs/LICENSE) © JMComicReader

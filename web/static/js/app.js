@@ -1062,6 +1062,7 @@ function initSearch() {
       if (s.keyword && s.cards && s.cards.length) {
         keyword = s.keyword; page = s.page || 1; total = s.total || 0;
         renderCards(s.cards, false, grid, searchCardOpts);
+        enrichSearchCards(s.cards, grid); // 切回搜索页恢复缓存后仍需补标签（saveState 在 enrich 异步回填前执行，缓存标签可能为空）
         if (countEl) countEl.textContent = `${s.total || 0} 个结果（已恢复）`;
         document.getElementById('loadMore').style.display = (s.hasMore || false) ? 'block' : 'none';
         renderFavTags(); renderFavAuthors(); updateQuickTagHighlight();         updateSearchCond(keyword, [...favSel], [...authorSel], getSearchMode());
@@ -2109,7 +2110,10 @@ function initReader() {
   const nextChapBtn = document.getElementById('nextChapBtn');
   let pages = [], current = 0, zoom = 1, currentChapter = '1';
   let currentImg = null; // 当前页 <img>，滚轮缩放时复用（不重建，避免重新发请求）
-  const MIN_ZOOM = 1, MAX_ZOOM = 6;
+  const MIN_ZOOM = 0.1, MAX_ZOOM = 6;
+  // 滚轮行为：'zoom' = 滚轮缩放（进页面整页完整显示）；'scroll' = 滚轮上下翻动（默认显示约半页）
+  let wheelMode = Settings.get('reader_wheel_mode', 'zoom');
+  let viewInitialized = false; // 首屏是否已按模式默认适配（之后翻页保留用户缩放）
   let chapters = [], currentChapterIndex = 0, chapterToastEnabled = true;
   // 章节预加载：key=chapterId, value={pages:[], promise, images:[]}
   let preloadCache = {};
@@ -2301,7 +2305,11 @@ function initReader() {
     img.style.height = 'auto';
     img.style.maxWidth = 'none';
     img.style.maxHeight = 'none';
-    img.onload = () => { currentImg = img; if (spinner.parentNode) spinner.remove(); };
+    img.onload = () => {
+      currentImg = img;
+      if (spinner.parentNode) spinner.remove();
+      if (!viewInitialized) { fitView(); viewInitialized = true; } // 首屏按模式默认适配（整页 / 半页）
+    };
     img.src = `/api/comic/${jmId}/page/${pages[i]}?chapter=${encodeURIComponent(currentChapter)}`;
     img.onerror = () => {
       stage.innerHTML = `<div class="empty"><div class="empty__icon"><i class="fas fa-image"></i></div><h3>加载失败</h3><p>章节 ${escapeHtml(currentChapter)} · 第 ${current + 1} 页</p></div>`;
@@ -2338,6 +2346,28 @@ function initReader() {
     zoomVal.textContent = Math.round(zoom * 100) + '%';
   }
 
+  // 按当前滚轮模式计算默认适配：zoom=整页完整显示(contain)；scroll=显示约半页(页高≈2×视口高)
+  function fitView() {
+    const img = currentImg;
+    if (!img || !img.naturalWidth) return;
+    const sw = stage.clientWidth, sh = stage.clientHeight;
+    let targetW;
+    if (wheelMode === 'scroll') {
+      const r = (sh * 2) / img.naturalHeight; // 半页：页高≈2×视口高，滚轮可纵向翻动
+      targetW = img.naturalWidth * r;
+    } else {
+      const r = Math.min(sw / img.naturalWidth, sh / img.naturalHeight); // 整页 contain
+      targetW = img.naturalWidth * r;
+    }
+    zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, targetW / sw));
+    img.style.width = (sw * zoom) + 'px';
+    img.style.height = 'auto';
+    img.style.left = (sw > img.clientWidth ? (sw - img.clientWidth) / 2 : 0) + 'px';
+    stage.scrollTop = 0;
+    stage.scrollLeft = 0;
+    zoomVal.textContent = Math.round(zoom * 100) + '%';
+  }
+
   document.getElementById('prevBtn').onclick = () => renderPage(current - 1);
   document.getElementById('nextBtn').onclick = () => renderPage(current + 1);
   const pageInfoEl = document.getElementById('pageInfo');
@@ -2353,6 +2383,10 @@ function initReader() {
   document.getElementById('zoomIn').onclick = () => applyZoom(zoom * 1.2);
   document.getElementById('zoomOut').onclick = () => applyZoom(zoom / 1.2);
   document.getElementById('closeReader').onclick = () => { history.length > 1 ? history.back() : location.href = '/library'; };
+  // 滚动模式下滚轮用于翻动，缩放按钮无意义 → 隐藏
+  const _hideZoomBtns = wheelMode === 'scroll';
+  document.getElementById('zoomIn').style.display = _hideZoomBtns ? 'none' : '';
+  document.getElementById('zoomOut').style.display = _hideZoomBtns ? 'none' : '';
 
   // 阅读设置（预加载参数）
   const readerSettingsBtn = document.getElementById('readerSettings');
@@ -2376,6 +2410,13 @@ function initReader() {
           <span>预加载页数（张）</span>
           <input type="number" id="rsPreloadCount" value="${preloadSettings.preloadCount}" min="1" max="50" style="padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface-2)">
         </div>
+        <div class="setting-row" style="flex-direction:column;align-items:stretch;gap:8px;margin-top:12px">
+          <span>滚轮行为</span>
+          <select id="rsWheelMode" style="padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface-2)">
+            <option value="zoom"${wheelMode === 'zoom' ? ' selected' : ''}>放大（滚轮缩放，整页默认完整显示）</option>
+            <option value="scroll"${wheelMode === 'scroll' ? ' selected' : ''}>上下滚动（滚轮翻动，默认显示约半页）</option>
+          </select>
+        </div>
       `,
       actions: [
         { key: 'cancel', label: '取消', cls: 'btn--ghost', onClick: c => c() },
@@ -2388,6 +2429,15 @@ function initReader() {
           Settings.set('reader_preload_threshold_pages', preloadSettings.thresholdPages);
           Settings.set('reader_preload_threshold_ratio', preloadSettings.thresholdRatio);
           Settings.set('reader_preload_count', preloadSettings.preloadCount);
+          // 滚轮行为：即时切换并重新适配当前页
+          const newMode = document.getElementById('rsWheelMode').value;
+          Settings.set('reader_wheel_mode', newMode);
+          wheelMode = newMode;
+          viewInitialized = true; // 切换后按新默认重新适配（不保留旧缩放）
+          fitView();
+          const hideZoom = newMode === 'scroll';
+          document.getElementById('zoomIn').style.display = hideZoom ? 'none' : '';
+          document.getElementById('zoomOut').style.display = hideZoom ? 'none' : '';
           toast('阅读设置已保存', 'success');
           c();
         }}
@@ -2412,10 +2462,14 @@ function initReader() {
     if (chapTrigger) { chapTrigger.addEventListener('mouseenter', openChap); chapTrigger.addEventListener('click', () => chapSide && chapSide.classList.toggle('open')); }
   }
 
-  // 滚轮缩放：以光标位置为锚点（preventDefault 阻止页面滚动/横向手势返回）
+  // 滚轮行为按设置分支：zoom=以光标为锚点缩放；scroll=纵向翻动（阻止页面滚动/手势返回）
   stage.addEventListener('wheel', (e) => {
     if (!currentImg) return;
     e.preventDefault();
+    if (wheelMode === 'scroll') {
+      stage.scrollTop += e.deltaY;
+      return;
+    }
     const rect = stage.getBoundingClientRect();
     const fx = e.clientX - rect.left;
     const fy = e.clientY - rect.top;

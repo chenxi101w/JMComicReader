@@ -69,7 +69,7 @@
 
 > 绿色版，推荐。无需安装，解压即用。
 
-1. 获取 `JMComicReader_v2.4.10_portable.zip`（单一完整包，约 28MB，已含程序本体 + 前端，**不含个人数据**）
+1. 获取 `JMComicReader_v2.4.12_portable.zip`（单一完整包，约 28MB，已含程序本体 + 前端，**不含个人数据**）
    - 仓库 **[Releases](https://github.com/chenxi101w/JMComicReader/releases)** 页面获取
 2. 用 **7-Zip** / 系统自带解压工具解压
 3. 双击 `JMComicReader.exe` 即可使用
@@ -193,6 +193,8 @@ jmcomicreader-windows/
 <a id="changelog"></a>
 ## 🗺 更新日志
 
+- **v2.4.12** — 阅读器新增「滚轮行为」设置：放大（滚轮缩放+整页完整显示）/ 上下滚动（滚轮翻动+默认半页）二选一，解决滚轮手势冲突。详见 [docs/CHANGELOG.md](docs/CHANGELOG.md)
+- **v2.4.11** — 修复搜索页切回页面后卡片标签消失（恢复缓存后补调 enrichSearchCards 重新拉标签）。详见 [docs/CHANGELOG.md](docs/CHANGELOG.md)
 - **v2.4.10** — 阅读器新增滚轮缩放：以鼠标位置为中心放大/缩小当前页；缩放复用同一张图不再重加载；放大后方向键 ↑/↓ 竖向平移。详见 [docs/CHANGELOG.md](docs/CHANGELOG.md)
 - **v2.4.9** — 代码优化：封面/阅读接口去全量扫描、下载任务去重、批量下载真正限并发（设置项 `max_concurrent_downloads` 生效）。详见 [docs/CHANGELOG.md](docs/CHANGELOG.md)
 - **v2.4.8** — 修复推荐页标签消失（标签按需补全扩展到推荐页）。详见 [docs/CHANGELOG.md](docs/CHANGELOG.md)

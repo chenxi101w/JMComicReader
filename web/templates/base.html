@@ -14,6 +14,46 @@
       } catch (e) {}
     })();
   </script>
+  <script>
+  /* 渲染引擎自检：本程序依赖 CSS 自定义属性(var)/color-mix/flex 等现代特性，
+     只能由 Edge WebView2(Chromium) 正确渲染。若系统缺少/损坏 WebView2 运行时，
+     pywebview 会退回 IE(MSHTML) 内核，导致整页错乱。此脚本在 IE 下弹出明确修复指引，
+     避免“界面莫名变样却毫无提示”。（刻意用 ES5 语法，保证 IE 也能执行本段） */
+  (function () {
+    function showEngineWarning() {
+      try {
+        var d = document.createElement('div');
+        d.setAttribute('style', 'position:fixed;inset:0;z-index:99999;background:#0c0f17;color:#eef1f8;' +
+          'font-family:Segoe UI,Microsoft YaHei,sans-serif;padding:40px;line-height:1.7;overflow:auto;');
+        d.innerHTML = '<div style="max-width:680px;margin:0 auto">' +
+          '<h1 style="color:#9b6bff;font-size:22px;margin:0 0 16px">⚠ 界面渲染引擎不可用</h1>' +
+          '<p style="font-size:15px">本程序需要 <b>Microsoft Edge WebView2</b> 运行时才能正确显示界面，' +
+          '但当前系统缺少或已损坏它，程序被迫退回老旧的 IE 内核，导致页面错乱（你看到的“界面变样”即由此引起）。</p>' +
+          '<p style="font-size:15px"><b>解决办法（约 1 分钟）：</b></p>' +
+          '<ol style="font-size:15px;padding-left:20px">' +
+          '<li>打开 <span style="color:#6a7dff">https://developer.microsoft.com/zh-cn/microsoft-edge/webview2/</span></li>' +
+          '<li>下载并运行 <b>Evergreen Bootstrapper</b>（常驻版安装器）</li>' +
+          '<li>安装完成后<b>完全退出本程序并重新打开</b></li>' +
+          '</ol>' +
+          '<p style="font-size:13px;color:#9aa3b8">若已安装仍异常，可在“控制面板→程序”里修复/重装 WebView2 Runtime，' +
+          '或在管理员 PowerShell 运行 <span style="color:#6a7dff">winget install Microsoft.EdgeWebView2.Runtime</span>。</p>' +
+          '</div>';
+        (document.body || document.documentElement).appendChild(d);
+      } catch (e) {}
+    }
+    function engineSupported() {
+      try {
+        if (!window.CSS || !window.CSS.supports) return false;
+        return window.CSS.supports('color', 'var(--x)');
+      } catch (e) { return false; }
+    }
+    if (!engineSupported()) {
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', showEngineWarning);
+      } else { showEngineWarning(); }
+    }
+  })();
+  </script>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=38">
   <link rel="icon" href="{{ url_for('static', filename='img/app_icon.png') }}">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">

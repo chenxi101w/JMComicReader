@@ -186,6 +186,7 @@ jmcomicreader-windows/
 | [docs/SHARE.md](docs/SHARE.md) | 分享包使用与分发说明 |
 | [docs/CODE_REVIEW.md](docs/CODE_REVIEW.md) | 代码审查与修复记录 |
 | [docs/CHANGELOG.md](docs/CHANGELOG.md) | 版本更新日志（含每版更新说明） |
+| [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | 故障排查（界面错乱/UI 变样等） |
 | [docs/LICENSE](docs/LICENSE) | MIT 许可证 |
 
 ---

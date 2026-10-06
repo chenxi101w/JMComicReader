@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block title %}搜索设置 · 设置{% endblock %}
+{% block active_route %}settings{% endblock %}
+{% block page_title %}搜索设置{% endblock %}
+{% block subtitle %}{{ sub_title }} · 设置{% endblock %}
+{% block content %}
+
+  <a href="/settings" class="d-back drill-back" style="margin:0 0 14px"><i class="fas fa-arrow-left"></i> 返回设置</a>
+    <div class="section settings-detail page-enter" id="settingsSubPage" data-sub="search">
+    <h3 class="section-title">搜索</h3>
+    <div class="settings-list">
+
+      <div class="subsection-title">结果与排序</div>
+
+      <div class="setting-row">
+        <div class="setting-row__icon"><i class="fas fa-warehouse"></i></div>
+        <div class="setting-row__main">
+          <div class="setting-row__label">搜索结果上限</div>
+        </div>
+        <div class="setting-row__control">
+          <input type="number" min="10" max="500" step="10" class="search-input" id="searchResultLimit" style="width:100px;padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface-2)">
+        </div>
+      </div>
+
+      <div class="setting-row">
+        <div class="setting-row__icon"><i class="fas fa-tag"></i></div>
+        <div class="setting-row__main">
+          <div class="setting-row__label">搜索结果标签显示数量</div>
+        </div>
+        <div class="setting-row__control">
+          <input type="number" min="0" max="30" class="search-input" id="searchTagLimit" style="width:100px;padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface-2)">
+        </div>
+      </div>
+
+      <div class="setting-row">
+        <div class="setting-row__icon"><i class="fas fa-arrow-down-wide-short"></i></div>
+        <div class="setting-row__main">
+          <div class="setting-row__label">默认排序</div>
+        </div>
+        <div class="setting-row__control">
+          <select id="defaultSort" class="search-input" style="padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface-2)">
+            <option value="mr">最新</option>
+            <option value="mv">浏览量</option>
+            <option value="mp">收藏量</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="setting-row">
+        <div class="setting-row__icon"><i class="fas fa-up-down"></i></div>
+        <div class="setting-row__main">
+          <div class="setting-row__label">搜索后搜索栏</div>
+        </div>
+        <div class="setting-row__control">
+          <select id="searchBarBehavior" class="search-input" style="padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface-2)">
+            <option value="stay">留在顶部</option>
+            <option value="hide">自动隐藏</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="subsection-title">本地作品处理</div>
+      <div class="setting-row">
+        <div class="setting-row__icon"><i class="fas fa-cloud-arrow-down"></i></div>
+        <div class="setting-row__main">
+          <div class="setting-row__label">已下载的漫画</div>
+        </div>
+        <div class="setting-row__control">
+          <select id="hideDownloadedInSearch" class="search-input" style="padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface-2)">
+            <option value="off">不处理</option>
+            <option value="gray">灰显</option>
+            <option value="hide">彻底隐藏</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="setting-row">
+        <div class="setting-row__icon"><i class="fas fa-circle-check"></i></div>
+        <div class="setting-row__main">
+          <div class="setting-row__label">已看完的漫画</div>
+        </div>
+        <div class="setting-row__control">
+          <select id="hideFinishedInSearch" class="search-input" style="padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface-2)">
+            <option value="off">不处理</option>
+            <option value="gray">灰显</option>
+            <option value="hide">彻底隐藏</option>
+          </select>
+        </div>
+      </div>
+
+      <a class="btn btn--sm btn--ghost" href="/settings/block" style="margin:0 0 0 auto;display:inline-flex"><i class="fas fa-shield-halved"></i> 前往屏蔽与订阅</a>
+
+    </div>
+  </div>
+
+{% endblock %}

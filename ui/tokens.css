@@ -1,0 +1,75 @@
+/* JMComicReader Windows 彩色 UI 设计 Token */
+/* 生成时间：2026-08-31 */
+
+:root {
+  /* === 尺寸 / Layout === */
+  --app-width: 1280px;
+  --app-height: 920px;
+  --sidebar-width: 240px;
+  --topbar-height: 64px;
+  --content-padding: 24px;
+  --section-gap: 18px;
+  --card-width: 150px;
+  --card-cover-height: 200px;
+  --chip-height: 30px;
+
+  /* === 圆角 / Radius === */
+  --radius-card: 16px;
+  --radius-button: 14px;
+  --radius-chip: 15px;
+  --radius-stat: 12px;
+  --radius-small: 10px;
+
+  /* === 中性色 / Neutrals === */
+  --bg-primary: #FFFFFF;
+  --bg-secondary: #F7F8FC;
+  --border-color: #E3E8F3;
+  --text-primary: #1A2030;
+  --text-secondary: #333540;
+  --text-tertiary: #6B7280;
+
+  /* === 主渐变 / Primary Gradients === */
+  --grad-primary: linear-gradient(135deg, #4F8CFF, #9B6BFF);
+  --grad-search-btn: linear-gradient(135deg, #4F8CFF, #9B6BFF);
+
+  /* === 封面渐变色 / Cover Gradients === */
+  --cover-star: linear-gradient(135deg, #4F8CFF, #21D7E6);
+  --cover-rose: linear-gradient(135deg, #F871A2, #C084FC);
+  --cover-cook: linear-gradient(135deg, #FB923C, #FACC15);
+  --cover-forest: linear-gradient(135deg, #4ADE80, #2DD4BF);
+  --cover-city: linear-gradient(135deg, #6366F1, #A855F7);
+  --cover-sea: linear-gradient(135deg, #38BDF8, #34D399);
+  --cover-sweet: linear-gradient(135deg, #F43F5E, #FB7185);
+  --cover-gold: linear-gradient(135deg, #FACC15, #FB923C);
+
+  /* === 分类强调色 / Category Chips === */
+  --cat-love-bg: #FFE3F0;
+  --cat-love-text: #D64D8E;
+  --cat-scifi-bg: #E0EFFF;
+  --cat-scifi-text: #3B6FD9;
+  --cat-adventure-bg: #DDF5F6;
+  --cat-adventure-text: #2A9D8C;
+  --cat-food-bg: #FFF0DC;
+  --cat-food-text: #E07B2A;
+  --cat-mystery-bg: #E6E9FF;
+  --cat-mystery-text: #5A67D8;
+  --cat-fantasy-bg: #F2E6FF;
+  --cat-fantasy-text: #8B5CF6;
+  --cat-history-bg: #FFF8E1;
+  --cat-history-text: #B4882B;
+  --cat-comedy-bg: #E6F5E6;
+  --cat-comedy-text: #4CAF50;
+
+  /* === 统计色 / Stat Colors === */
+  --stat-download: #4F8CFF;
+  --stat-favorite: #F43F5E;
+  --stat-history: #6366F1;
+
+  /* === 字体 / Typography === */
+  --font-family: "Noto Sans SC", "Inter", system-ui, -apple-system, sans-serif;
+  --font-title-lg: 600 24px/1.3 var(--font-family);
+  --font-title-md: 600 18px/1.3 var(--font-family);
+  --font-body: 400 14px/1.5 var(--font-family);
+  --font-caption: 400 12px/1.4 var(--font-family);
+  --font-number: 700 28px/1 var(--font-family);
+}

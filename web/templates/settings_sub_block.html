@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}屏蔽与订阅 · 设置{% endblock %}
+{% block active_route %}settings{% endblock %}
+{% block page_title %}屏蔽与订阅{% endblock %}
+{% block content %}
+
+  <a href="/settings" class="d-back drill-back" style="margin:0 0 14px"><i class="fas fa-arrow-left"></i> 返回设置</a>
+  <div class="section settings-detail page-enter" id="settingsSubPage" data-sub="block">
+  <h3 class="section-title">屏蔽与订阅</h3>
+  <div class="settings-list">
+
+    {# ── 屏蔽 ── #}
+    <div class="subsection-title">屏蔽</div>
+    <div class="setting-row" style="flex-direction:column;align-items:stretch;gap:12px">
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <input class="search-input" id="blockInput" placeholder="作者名 / JM 号 / 标签" style="flex:1;min-width:240px">
+        <select id="blockType" class="search-input" style="padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface-2)">
+          <option value="author">作者</option>
+          <option value="work">作品(JM号)</option>
+          <option value="tag">标签</option>
+        </select>
+        <button class="btn btn--primary btn--sm" id="blockAddBtn"><i class="fas fa-ban"></i> 拉黑</button>
+      </div>
+      <label class="switch-inline">
+        <input type="checkbox" id="searchApplyBlocks">
+        <span>搜索结果应用屏蔽规则</span>
+      </label>
+    </div>
+
+    {# 屏蔽列表：JS 的 renderBlockList 渲染到 #blockList #}
+    <div class="setting-card" id="blockListWrap" style="padding:14px 16px">
+      <div style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:500;color:var(--text-1)">
+        <i class="fas fa-ban" style="color:var(--danger)"></i> 屏蔽列表
+        <span style="font-size:12px;color:var(--text-3);font-weight:400;margin-left:auto">点 × 取消屏蔽</span>
+      </div>
+      <div id="blockList" style="margin-top:10px"></div>
+    </div>
+
+    {# ── 作者订阅 ── #}
+    <div class="subsection-title">作者订阅</div>
+    <div class="setting-card">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:2px">
+        <a class="btn btn--sm btn--ghost" href="/search"><i class="fas fa-compass"></i> 查看订阅新作</a>
+        <button class="btn btn--sm btn--primary" id="subsTriggerPollBtn"><i class="fas fa-rotate"></i> 立即检查一次</button>
+      </div>
+      <div id="subsPollHint" class="manage-empty" style="margin-top:8px;padding:10px 12px;border-radius:var(--radius-sm);border:1px dashed var(--border);font-size:12px;color:var(--text-3);display:none"></div>
+    </div>
+
+  </div>
+  </div>
+
+{% endblock %}

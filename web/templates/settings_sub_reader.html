@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}阅读设置 · 设置{% endblock %}
+{% block active_route %}settings{% endblock %}
+{% block page_title %}阅读设置{% endblock %}
+{% block subtitle %}{{ sub_title }} · 设置{% endblock %}
+{% block content %}
+
+  <a href="/settings" class="d-back drill-back" style="margin:0 0 14px"><i class="fas fa-arrow-left"></i> 返回设置</a>
+    <div class="section settings-detail page-enter" id="settingsSubPage" data-sub="reader">
+    <h3 class="section-title">阅读</h3>
+    <div class="settings-list">
+
+      <div class="subsection-title">书架</div>
+      <div class="setting-row">
+        <div class="setting-row__icon"><i class="fas fa-sort"></i></div>
+        <div class="setting-row__main">
+          <div class="setting-row__label">书架默认排序</div>
+        </div>
+        <div class="setting-row__control">
+          <select id="shelfSort" class="search-input" style="padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface-2)">
+            <option value="download_desc">下载时间（降序）</option>
+            <option value="download_asc">下载时间（升序）</option>
+            <option value="read_desc">阅读次数（降序）</option>
+            <option value="read_asc">阅读次数（升序）</option>
+            <option value="favorite_desc">喜欢匹配（高到低）</option>
+            <option value="favorite_asc">喜欢匹配（低到高）</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="subsection-title">章节 / 读完</div>
+      <div class="setting-row">
+        <div class="setting-row__icon"><i class="fas fa-bell"></i></div>
+        <div class="setting-row__main">
+          <div class="setting-row__label">章节边界提醒</div>
+        </div>
+        <div class="setting-row__control">
+          <label class="switch"><input type="checkbox" id="readerChapterToast"><span class="track"></span></label>
+        </div>
+      </div>
+
+      <div class="setting-card" style="margin-top:8px">
+        <div class="setting-card__title"><i class="fas fa-arrow-up-right-from-square"></i> 打开阅读页管理</div>
+        <a class="btn btn--primary btn--sm" href="/library">进入书架</a>
+      </div>
+
+    </div>
+  </div>
+
+{% endblock %}

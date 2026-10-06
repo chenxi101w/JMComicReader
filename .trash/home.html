@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}主页 · 为你推荐{% endblock %}
+{% block active_route %}home{% endblock %}
+{% block page_title %}主页{% endblock %}
+
+{% block content %}
+
+  {# ── 订阅更新（有则展示） ────────────────────────── #}
+  <div class="d-section" id="subUpdatesSection" style="display:none">
+    <div class="d-section-title" style="justify-content:space-between">
+      <span style="display:inline-flex;align-items:center;gap:10px"><i class="fas fa-bell" style="color:var(--accent)"></i> 订阅更新</span>
+      <span style="display:inline-flex;gap:8px">
+        <button class="d-back" id="subAllSeenBtn"><i class="fas fa-check-double"></i> 全部已读</button>
+        <button class="d-back" id="subManageBtn"><i class="fas fa-user-pen"></i> 管理订阅</button>
+      </span>
+    </div>
+    <div id="subUpdatesList" class="sub-updates-list"></div>
+  </div>
+
+  {# ── 为你推荐 · 第一行 4 卡 ────────────────────── #}
+  <div class="d-section">
+    <div class="d-section-title">
+      <i class="fas fa-wand-magic-sparkles" style="color:#9B6BFF"></i>
+      为你推荐
+      <span class="count" id="recommendNote" style="font-size:13px;color:var(--d-text-3);font-weight:500"></span>
+    </div>
+
+    <div id="recommendLoading" style="display:none;padding:22px;color:var(--d-text-3);text-align:center">
+      <i class="fas fa-spinner fa-spin"></i> 正在生成兴趣推荐…
+    </div>
+
+    <div class="d-comic-grid stagger" id="recommendGrid"></div>
+
+    <div class="empty" id="recommendEmpty" style="display:none;background:var(--d-bg);border-radius:16px;padding:36px 24px;text-align:center;border:1px dashed var(--d-border)">
+      <div class="empty__icon" style="width:60px;height:60px;border-radius:18px;background:var(--d-grad-soft);display:grid;place-items:center;margin:0 auto 14px;color:var(--accent);font-size:24px"><i class="fas fa-wand-magic-sparkles"></i></div>
+      <h3 style="color:var(--d-text-1);font-size:16px;margin:0 0 8px">暂无推荐</h3>
+      <p style="color:var(--d-text-3);margin:0;font-size:13px">多搜几次，或去「设置 → 推荐」添加你感兴趣的作者 / 标签 / 名字</p>
+    </div>
+  </div>
+
+  {# ── 热门分类 · 8 颗彩色 Pills ─────────────────── #}
+  <div class="d-section">
+    <div class="d-section-title">
+      <i class="fas fa-fire" style="color:#FB923C"></i>
+      热门分类
+    </div>
+    <div class="d-cat-row" id="hotCats">
+      <button class="d-cat d-cat--love"    data-cat="love">   <i class="fas fa-heart"></i> 恋爱</button>
+      <button class="d-cat d-cat--scifi"   data-cat="scifi">  <i class="fas fa-rocket"></i> 科幻</button>
+      <button class="d-cat d-cat--food"    data-cat="food">   <i class="fas fa-utensils"></i> 美食</button>
+      <button class="d-cat d-cat--adv"     data-cat="forest"> <i class="fas fa-leaf"></i> 冒险</button>
+      <button class="d-cat d-cat--mys"     data-cat="mys">    <i class="fas fa-compass"></i> 悬疑</button>
+      <button class="d-cat d-cat--fant"    data-cat="fant">   <i class="fas fa-dragon"></i> 奇幻</button>
+      <button class="d-cat d-cat--hist"    data-cat="hist">   <i class="fas fa-landmark"></i> 历史</button>
+      <button class="d-cat d-cat--com"     data-cat="com">    <i class="fas fa-face-grin-tears"></i> 搞笑</button>
+      <button class="d-cat d-cat--scifi"   data-cat="city">   <i class="fas fa-city"></i> 都市</button>
+      <button class="d-cat d-cat--food"    data-cat="sweet">  <i class="fas fa-candy-cane"></i> 日常</button>
+      <button class="d-cat d-cat--hist"    data-cat="gold">   <i class="fas fa-trophy"></i> 竞技</button>
+      <button class="d-cat d-cat--adv"     data-cat="sea">    <i class="fas fa-umbrella-beach"></i> 校园</button>
+    </div>
+  </div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // 首页热门分类 → 点击即跳转到搜索页并自动填充该关键词
+  (function () {
+    document.querySelectorAll('#hotCats .d-cat').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var label = (btn.textContent || '').replace(/\s+/g,' ').trim();
+        // 提取文字（去掉 icon 前缀）：取最后一个 token，中文分类名
+        var parts = label.split(' ');
+        var kw = parts[parts.length - 1] || '';
+        if (!kw) return;
+        window.location.href = '/search?kw=' + encodeURIComponent(kw);
+      });
+    });
+  })();
+</script>
+{% endblock %}

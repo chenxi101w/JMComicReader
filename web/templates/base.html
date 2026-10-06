@@ -54,41 +54,80 @@
     }
   })();
   </script>
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=38">
-  <link rel="icon" href="{{ url_for('static', filename='img/app_icon.png') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=65">
+  <link rel="icon" id="appFavicon" href="{{ url_for('static', filename='img/icons/default.png') }}">
+  <script>
+    /* 应用图标防闪：首屏前按已有选择切换侧边栏 logo 与 favicon（无则默认） */
+    (function () {
+      try {
+        var key = localStorage.getItem('jm_app_icon') || 'default';
+        var png = '/static/img/icons/' + key + '.png';
+        var fi = document.getElementById('appFavicon');
+        if (fi) fi.setAttribute('href', png);
+      } catch (e) {}
+    })();
+  </script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 </head>
-<body>
+<body class="app-desktop {% block body_mode %}{% endblock %}">
   <div class="app">
-    <main class="app-main page-enter" id="appMain">
-      {% block content %}{% endblock %}
-    </main>
+    <div class="d-shell">
 
-    <a class="download-fab" href="/downloads" title="下载管理" aria-label="下载管理">
-      <i class="fas fa-download"></i>
-    </a>
+      {# ── 内容区（无顶栏，内容直接铺满） ── #}
+      <div class="d-content">
+        <main class="app-main page-enter" id="appMain">
+          {% block content %}{% endblock %}
+        </main>
+      </div>
 
-    <nav class="app-nav">
-      <a class="nav-item" href="/home" data-route="home">
-        <i class="fas fa-home"></i><span>主页</span>
-      </a>
-      <a class="nav-item" href="/search" data-route="search">
-        <i class="fas fa-magnifying-glass"></i><span>搜索</span>
-      </a>
-      <a class="nav-item" href="/library" data-route="library">
-        <i class="fas fa-book-open"></i><span>阅读</span>
-      </a>
-      <a class="nav-item" href="/settings" data-route="settings">
-        <i class="fas fa-gear"></i><span>设置</span>
-      </a>
-    </nav>
+      {# ── 底部导航（对齐手机版 v6.1.0：书架 / 发现 / 设置，共 3 Tab） ── #}
+      <nav class="d-nav-bar" id="bottomNav" aria-label="主导航">
+        {% set active = self.active_route() | default('') %}
+        <a class="nav-item d-nav-item {% if active=='library' %}is-active{% endif %}" href="/library" data-route="library">
+          <i class="fas fa-book-open"></i><span>书架</span>
+        </a>
+        <a class="nav-item d-nav-item {% if active=='search' %}is-active{% endif %}" href="/search" data-route="search">
+          <i class="fas fa-compass"></i><span>发现</span>
+        </a>
+        <a class="nav-item d-nav-item {% if active=='settings' %}is-active{% endif %}" href="/settings" data-route="settings">
+          <i class="fas fa-gear"></i><span>设置</span>
+        </a>
+      </nav>
+    </div>
   </div>
 
-  <button class="global-back" id="globalBack" title="返回"><i class="fas fa-arrow-left"></i></button>
   <div class="toast-wrap" id="toastWrap"></div>
   <div id="modalRoot"></div>
 
-  <script src="{{ url_for('static', filename='js/app.js') }}?v=38"></script>
+  <script src="{{ url_for('static', filename='js/app.js') }}?v=65"></script>
+  <script>
+    // 新 UI 的小钩子：顶栏快捷跳转 & 主题按钮复用 app.js 中已有的 toggleTheme()
+    (function () {
+      document.querySelectorAll('[data-goto]').forEach(function (btn) {
+        btn.addEventListener('click', function () { window.location.href = btn.getAttribute('data-goto'); });
+      });
+      var tBtn = document.getElementById('dThemeBtn');
+      if (tBtn) {
+        tBtn.addEventListener('click', function () {
+          if (typeof window.toggleTheme === 'function') window.toggleTheme();
+          else {
+            var root = document.documentElement;
+            var cur = root.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+            var next = cur === 'dark' ? 'light' : 'dark';
+            root.setAttribute('data-theme', next);
+            try { localStorage.setItem('jm_theme', next); } catch (e) {}
+          }
+          var ic = tBtn.querySelector('i');
+          if (ic) ic.className = (document.documentElement.getAttribute('data-theme')==='dark' ? 'fas fa-sun' : 'fas fa-moon');
+        });
+        // 初始图标
+        (function syncIcon(){
+          var ic = tBtn.querySelector('i');
+          if (ic) ic.className = (document.documentElement.getAttribute('data-theme')==='dark' ? 'fas fa-sun' : 'fas fa-moon');
+        })();
+      }
+    })();
+  </script>
   {% block scripts %}{% endblock %}
 </body>
 </html>

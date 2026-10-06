@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}回收站 · 本地漫画{% endblock %}
+{% block active_route %}library{% endblock %}
+{% block page_title %}回收站{% endblock %}
+
+{% block content %}
+
+  <style>
+    /* 回收站页局部样式（v2.9.0）：只在 /recycle 生效，不污染全局 */
+    .rc-list { display: flex; flex-direction: column; gap: 10px; }
+    .rc-row {
+      display: flex; align-items: center; gap: 14px;
+      background: var(--d-bg); border: 1px solid var(--d-border);
+      border-radius: 14px; padding: 10px 14px;
+    }
+    .rc-row.is-trashed { border-style: dashed; }
+    .rc-cover {
+      width: 54px; height: 72px; flex: 0 0 54px; border-radius: 8px;
+      object-fit: cover; background: rgba(0,0,0,.06);
+    }
+    .rc-main { flex: 1; min-width: 0; }
+    .rc-title {
+      font-size: 14px; font-weight: 700; color: var(--d-text-1);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .rc-sub { font-size: 12px; color: var(--d-text-3); margin-top: 4px; }
+    .rc-tag {
+      display: inline-block; font-size: 11px; padding: 2px 8px;
+      border-radius: 20px; margin-right: 6px; vertical-align: middle;
+    }
+    .rc-tag.grace { background: rgba(212,166,32,.18); color: #8d6f12; }
+    .rc-tag.gone  { background: rgba(226,86,74,.16); color: #b14a41; }
+    .rc-acts { display: inline-flex; gap: 6px; flex: 0 0 auto; }
+    .rc-empty { text-align: center; padding: 44px 0; color: var(--d-text-3); font-size: 13px; }
+  </style>
+
+  <div class="d-section">
+    <div class="d-section-title" style="margin:0 0 12px">
+      <i class="fas fa-trash-can" style="color:var(--accent);margin-right:6px"></i>
+      <span>回收站</span>
+      <span class="count" id="rcCount" style="font-size:13px;color:var(--d-text-3);font-weight:500"></span>
+      <span style="margin-left:auto;display:inline-flex;gap:6px">
+        <button class="d-back" id="rcScanBtn" style="padding:5px 12px;font-size:12px;height:32px"
+                title="立即扫描宽限期已到期的条目，删除其本地图片（保留封面与记录）">
+          <i class="fas fa-rotate"></i> 扫描到期
+        </button>
+        <button class="d-back" id="rcClearBtn" style="padding:5px 12px;font-size:12px;height:32px"
+                title="彻底删除所有「已删本地」的记录（宽限中的不受影响）">
+          <i class="fas fa-broom"></i> 清空
+        </button>
+        <button class="d-back" id="rcBackBtn" style="padding:5px 12px;font-size:12px;height:32px">
+          <i class="fas fa-arrow-left"></i> 返回书架
+        </button>
+      </span>
+    </div>
+
+    <div class="rc-list" id="rcList">
+      <div class="skeleton sk-card" style="height:96px"></div>
+      <div class="skeleton sk-card" style="height:96px"></div>
+    </div>
+  </div>
+
+{% endblock %}

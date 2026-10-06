@@ -3,27 +3,115 @@
    主题 · 导航 · Toast/Modal · 分类树 · 下载调度 · 页面路由
    ============================================================ */
 
-/* ── 主题 ──────────────────────────────────────────────── */
+/* ── 主题 ────────────────────────────────────────────────
+ * 支持：system / light / dark / auto（定时夜间，带 start/end）
+ * 持久化按用户"选择"存；实际生效主题需在渲染时调用 Theme.resolve() 计算
+ * Theme.setPreferred(choice, opts)：存到 localStorage + 后端
+ * Theme.applyEffective()：按当前 choice + 系统/定时计算，设 data-theme
+ */
 const Theme = {
-  get() { return document.documentElement.getAttribute('data-theme') || 'light'; },
-  set(t) {
-    document.documentElement.setAttribute('data-theme', t);
-    try { localStorage.setItem('jm_theme', t); } catch (e) {}
+  _nightStart: "22:00",
+  _nightEnd: "06:00",
+  _pref: "system",     // 用户选择：system/light/dark/auto
+  _eff: "light",       // 当前实际生效 light/dark
+  getPreferred() { return this._pref; },
+  getEffective() { return this._eff; },
+  get() { return this._eff; }, // 兼容旧逻辑：返回实际生效主题
+  _parseTime(t) {
+    if (!t) return null;
+    const m = /^(\d{1,2}):(\d{2})$/.exec(t);
+    if (!m) return null;
+    return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+  },
+  _inNightRange(now, start, end) {
+    const n = now.getHours() * 60 + now.getMinutes();
+    if (start <= end) return n >= start && n < end;   // 比如 08-20 白天区间
+    return n >= start || n < end;                     // 跨零点：22-06 夜间
+  },
+  setEffective(eff) {
+    if (eff !== "light" && eff !== "dark") eff = "light";
+    this._eff = eff;
+    document.documentElement.setAttribute("data-theme", eff);
     document.querySelectorAll('.theme-toggle i').forEach(icon => {
-      icon.className = t === 'dark' ? 'fas fa-sun' : 'fas fa-moon';
+      icon.className = eff === "dark" ? "fas fa-sun" : "fas fa-moon";
     });
+  },
+  apply() {
+    // 按 _pref + _nightStart/_nightEnd + 系统设置计算当前有效主题
+    let eff = "light";
+    const now = new Date();
+    if (this._pref === "light") eff = "light";
+    else if (this._pref === "dark") eff = "dark";
+    else if (this._pref === "auto") {
+      const s = this._parseTime(this._nightStart);
+      const e = this._parseTime(this._nightEnd);
+      const inNight = (s != null && e != null) ? this._inNightRange(now, s, e) : false;
+      eff = inNight ? "dark" : "light";
+    } else { // system 或其他未知值 → 跟随系统
+      try {
+        const prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+        eff = prefersDark ? "dark" : "light";
+      } catch (_) { eff = "light"; }
+    }
+    this.setEffective(eff);
+    return eff;
+  },
+  setPreferred(pref, opts) {
+    pref = String(pref || "system").toLowerCase();
+    if (!["system", "light", "dark", "auto"].includes(pref)) pref = "system";
+    this._pref = pref;
+    if (opts) {
+      if (opts.start != null) this._nightStart = opts.start;
+      if (opts.end != null) this._nightEnd = opts.end;
+    }
+    try { localStorage.setItem("jm_theme", pref); } catch (_) {}
+    try { localStorage.setItem("jm_theme_night_start", this._nightStart); } catch (_) {}
+    try { localStorage.setItem("jm_theme_night_end", this._nightEnd); } catch (_) {}
+    this.apply();
+  },
+  // 从 localStorage 恢复（首屏后端还没返回之前也能用）
+  restoreFromLocal() {
+    try {
+      const p = localStorage.getItem("jm_theme");
+      if (p) this._pref = p;
+      const s = localStorage.getItem("jm_theme_night_start");
+      if (s) this._nightStart = s;
+      const e = localStorage.getItem("jm_theme_night_end");
+      if (e) this._nightEnd = e;
+    } catch (_) {}
+    this.apply();
+  },
+  toggle() {
+    // 顶栏快捷切换：在 system/auto 下直接走 light→dark→light；light/dark 下翻转
+    if (this._pref === "system" || this._pref === "auto") {
+      this.setPreferred(this._eff === "dark" ? "light" : "dark");
+    } else {
+      this.setPreferred(this._pref === "dark" ? "light" : "dark");
+    }
+    this.savePreferred();
   },
   sync(el) {
-    const icon = el && el.querySelector('i');
-    if (icon) icon.className = this.get() === 'dark' ? 'fas fa-sun' : 'fas fa-moon';
+    const icon = el && el.querySelector("i");
+    if (icon) icon.className = this.getEffective() === "dark" ? "fas fa-sun" : "fas fa-moon";
   },
-  toggle() { this.set(this.get() === 'dark' ? 'light' : 'dark'); },
-  save() {
-    api('POST', '/api/settings', { theme: this.get() }).then(r => {
-      if (r.success) setAppConfig('theme', this.get());
-    });
+  async savePreferred() {
+    const payload = {
+      theme: this._pref,
+      theme_night_start: this._nightStart,
+      theme_night_end: this._nightEnd,
+    };
+    const r = await api("POST", "/api/settings", payload);
+    if (r.success) {
+      setAppConfig("theme", this._pref);
+      setAppConfig("theme_night_start", this._nightStart);
+      setAppConfig("theme_night_end", this._nightEnd);
+    }
+    return r;
   }
 };
+
+// 首屏尽早本地恢复一次（后端返回后 applyGlobalSettings 会覆写）
+try { Theme.restoreFromLocal(); } catch (_) {}
 
 /* ── 列表型本地存储工厂（收藏标签 / 作者 / 常用标签 / 历史 共用）──
    消除原先每个 store 重复书写 list/save/add/remove 的样板代码。 */
@@ -585,7 +673,6 @@ function parseIds(text) {
   )];
 }
 function renderPageChapter(pages, chapterCount) {
-  if (document.body.classList.contains('hide-page-chapter')) return '';
   const p = pages > 0 ? `${pages} 页` : '';
   const ch = chapterCount > 0 ? `${chapterCount} 章` : '';
   const text = [p, ch].filter(Boolean).join(' · ');
@@ -613,8 +700,7 @@ async function blockWork(jmId, title) {
   toast(`已拉黑《${title || jmId}》`, 'success');
   document.querySelectorAll(`.comic-card[data-jm-id="${jmId}"]`).forEach(c => c.remove());
   pruneSearchSessionCards(c => String(c.id) === String(jmId));
-  const cfg = await loadAppConfig();
-  if (cfg.show_block_hits !== '0') showBlockHits('作品', title || jmId, r.local_hits);
+  showBlockHits('作品', title || jmId, r.local_hits);
 }
 async function blockAuthor(author) {
   if (!author) return;
@@ -623,8 +709,7 @@ async function blockAuthor(author) {
   toast(`已拉黑作者「${author}」`, 'success');
   document.querySelectorAll('.comic-card').forEach(c => { if (c.dataset.author === author) c.remove(); });
   pruneSearchSessionCards(c => c.author === author);
-  const cfg = await loadAppConfig();
-  if (cfg.show_block_hits !== '0') showBlockHits('作者', author, r.local_hits);
+  showBlockHits('作者', author, r.local_hits);
 }
 async function blockTag(tag) {
   if (!tag) return;
@@ -637,8 +722,7 @@ async function blockTag(tag) {
     if (tags.includes(tag)) card.remove();
   });
   pruneSearchSessionCards(c => (c.tags || []).includes(tag));
-  const cfg = await loadAppConfig();
-  if (cfg.show_block_hits !== '0') showBlockHits('标签', tag, r.local_hits);
+  showBlockHits('标签', tag, r.local_hits);
 }
 function showTagContextMenu(x, y, tag, el) {
   const old = document.getElementById('tagContextMenu');
@@ -704,12 +788,11 @@ function pruneSearchSessionCards(predicate) {
 /* ── 导航高亮 ─────────────────────────────────────────── */
 function setupNav() {
   const p = location.pathname;
-  const cur = p.startsWith('/home') ? 'home'
-    : p.startsWith('/library') ? 'library'
+  const cur = p.startsWith('/library') ? 'library'
     : p.startsWith('/settings') ? 'settings'
-    : p.startsWith('/downloads') ? 'downloads'
+    : p.startsWith('/recycle') ? 'library'
     : p.startsWith('/reader') ? 'library'
-    : 'search';
+    : 'search';   // /search · /home(302) · /detail 都归「发现」
   document.querySelectorAll('.nav-item').forEach(n => {
     n.classList.toggle('nav-item--active', n.dataset.route === cur);
   });
@@ -753,14 +836,11 @@ function cardTagsHtml(tags, selectedTags = null, favs = null) {
     extra = tags.length - limit;
   }
   if (favs === null) favs = FavTags.list();   // 调用方可传入已计算好的收藏集，避免逐卡解析
-  const mode = Settings.get('fav_tag_highlight', 'same'); // same / dim / off
   let html = shown.map(t => {
     const isSel = selectedTags && selectedTags.has(t);
     const isFav = favs.includes(t);
     let cls = 'comic-card__tag';
-    if (isSel) cls += ' on';
-    else if (isFav && mode === 'same') cls += ' on';
-    else if (isFav && mode === 'dim') cls += ' fav-dim';
+    if (isSel || isFav) cls += ' on';
     return `<span class="${cls}" data-tag="${escapeHtml(t)}">${escapeHtml(t)}</span>`;
   }).join('');
   if (extra > 0) html += `<span class="comic-card__tag comic-card__tag--more" title="还有 ${extra} 个标签">+${extra}</span>`;
@@ -821,7 +901,7 @@ function enrichSearchCards(list, gridEl) {
   }, 350);
 }
 
-/* 漫画卡片渲染（模块级，搜索页 / 主页推荐 / 屏蔽预览 共用）
+/* 漫画卡片渲染（模块级，搜索页 / 发现页推荐 / 屏蔽预览 共用）
    opts.onAuthorClick(author)：点击作者名时的回调；不传则仅展示不可点。 */
 function renderCards(list, append = true, target = null, opts = {}) {
   const grid = target || document.getElementById('comicGrid');
@@ -841,8 +921,14 @@ function renderCards(list, append = true, target = null, opts = {}) {
     card.dataset.author = author;
     card.dataset.tags = (c.tags || []).join(',');
     card.dataset.pages = String(c.pages || 0);
-    card.style.animationDelay = (Math.min(i, 15) * 0.03) + 's';
+  card.style.animationDelay = (Math.min(i, 15) * 0.03) + 's';
+    // P1：搜索结果本地状态样式（已下载/读完灰显卡 + 角标提示）
+    const grayDl = !!c.__gray_dl, grayFin = !!c.__gray_fin, dled = !!c.downloaded, fin = !!c.finished;
+    const cardCls = [grayDl || grayFin ? 'comic-card--gray' : '', dled ? 'is-downloaded' : '', fin ? 'is-finished' : ''].filter(Boolean).join(' ');
+    if (cardCls) card.className += ' ' + cardCls;
     card.innerHTML = `
+      ${dled ? `<span class="status-badge status-badge--dl"><i class="fas fa-check"></i> 已下载</span>` : ''}
+      ${fin ? `<span class="status-badge status-badge--fin"><i class="fas fa-circle-check"></i> 已读完</span>` : ''}
       <img class="comic-card__cover" ${c.cover ? `src="${escapeHtml(c.cover)}"` : `data-cover="${id}" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='3' height='4'%3E%3C/svg%3E"`}>
       <div class="comic-card__body">
         <div class="comic-card__title">${escapeHtml(c.title || '未命名漫画')}</div>
@@ -873,6 +959,12 @@ function renderCards(list, append = true, target = null, opts = {}) {
       e.stopPropagation();
       blockWork(id, c.title);
     };
+    // 点卡片空白处 → 漫画详情页（内部按钮/标签/作者各自处理，不误触发）
+    card.style.cursor = 'pointer';
+    card.onclick = (e) => {
+      if (e.target.closest('[data-act], [data-tag], .author-name, .comic-card__tags, .comic-card__actions')) return;
+      location.href = '/detail/' + id;
+    };
     bindCardTagHandlers(card);
     const authorName = card.querySelector('.author-name');
     if (authorName && onAuthorClick) {
@@ -889,6 +981,14 @@ function renderCards(list, append = true, target = null, opts = {}) {
 function initSearch() {
   const grid = document.getElementById('comicGrid');
   const input = document.getElementById('searchInput');
+  /* 发现态（未搜索：订阅新作 + 推荐）与搜索态（结果）互斥切换，
+     对齐手机版 v6.1.0 起把「主页 + 搜索」合并成的发现页 */
+  const discoverPane = document.getElementById('discoverPane');
+  const searchPane = document.getElementById('searchPane');
+  function setView(isSearch) {
+    if (discoverPane) discoverPane.style.display = isSearch ? 'none' : '';
+    if (searchPane) searchPane.style.display = isSearch ? '' : 'none';
+  }
   const btn = document.getElementById('searchBtn');
   const loading = document.getElementById('loading');
   const empty = document.getElementById('emptyState');
@@ -896,20 +996,32 @@ function initSearch() {
   const sortBySel = document.getElementById('sortBy');
   const timeSel = document.getElementById('timeRange');
   const dirSel = document.getElementById('sortDir');
+  const resultSec = document.getElementById('resultSection');
+  if (resultSec) resultSec.style.display = 'none'; // 未搜索时隐藏结果区，避免大块空白
   let page = 1, keyword = '', total = 0, loadingMore = false;
   const main = document.getElementById('appMain');
   const clearKwBtn = document.getElementById('clearKwBtn');
   loadAppConfig(); // 预载配置，使标签显示数量限制即时生效
 
-  // ── 搜索偏好（排序/时间/方向）持久化 ──
+  // ── 搜索偏好（范围 / 排序 / 时间 / 方向）持久化 ──
+  const scopeTabs = Array.from(document.querySelectorAll('#searchModeTabs .d-mode'));
+  function getScope() {
+    const active = document.querySelector('#searchModeTabs .d-mode.is-active');
+    return active ? active.dataset.mode : 'comic';
+  }
+  function setScope(mode) {
+    scopeTabs.forEach(t => t.classList.toggle('is-active', t.dataset.mode === mode));
+  }
   (function restoreSearchPrefs() {
     const p = SearchPrefs.get();
     if (sortBySel && p.sortBy) sortBySel.value = p.sortBy;
     if (timeSel && p.time) timeSel.value = p.time;
     if (dirSel && p.dir) dirSel.value = p.dir;
+    if (p.scope && scopeTabs.some(t => t.dataset.mode === p.scope)) setScope(p.scope);
   })();
   function saveSearchPrefs() {
     SearchPrefs.set({
+      scope: getScope(),
       sortBy: sortBySel ? sortBySel.value : 'mr',
       time: timeSel ? timeSel.value : 'a',
       dir: dirSel ? dirSel.value : 'desc'
@@ -1034,15 +1146,47 @@ function initSearch() {
     const active = searchDrop && searchDrop.querySelector('.td-mode-btn.active');
     return active ? active.dataset.mode : 'or';
   }
-  function updateSearchCond(kw, tagList, authorList, mode) {
+  function updateSearchCond(kw, tagList, authorList, mode, scope) {
     const el = document.getElementById('searchCond');
     if (!el) return;
+    const scopeLabel = { comic: '', title: '标题', author: '作者', tag: '标签' }[scope || 'comic'];
     const parts = [];
+    if (scopeLabel) parts.push(`范围:${scopeLabel}`);
     if (kw) parts.push(`「${kw}」`);
     if (tagList && tagList.length) parts.push(`标签:${tagList.join(' ')}（${mode === 'and' ? '且' : '或'}）`);
     if (authorList && authorList.length) parts.push(`作者:${authorList.join(' ')}`);
     if (parts.length) { el.textContent = ' · ' + parts.join(' · '); el.style.display = ''; }
     else el.style.display = 'none';
+  }
+  // 命中关键词高亮（标题 + 作者），标签范围不高亮（关键词是标签名）
+  function highlightResults(kw, scope) {
+    if (!kw || scope === 'tag') return;
+    const kwe = escapeHtml(kw).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    if (!kwe) return;
+    const re = new RegExp('(' + kwe + ')', 'gi');
+    grid.querySelectorAll('.comic-card').forEach(card => {
+      const t = card.querySelector('.comic-card__title');
+      if (t && card.dataset.title) t.innerHTML = escapeHtml(card.dataset.title).replace(re, '<mark>$1</mark>');
+      const a = card.querySelector('.author-name');
+      if (a && card.dataset.author) a.innerHTML = escapeHtml(card.dataset.author).replace(re, '<mark>$1</mark>');
+    });
+  }
+  // 空态推荐：展示常用/收藏标签，点一下即按该标签搜索
+  function renderEmptySuggest() {
+    const box = document.getElementById('searchEmptySuggest');
+    if (!box) return;
+    const tags = Array.from(new Set([...FavTags.list(), ...QuickTags.list()])).slice(0, 12);
+    if (!tags.length) { box.style.display = 'none'; box.innerHTML = ''; return; }
+    box.style.display = '';
+    box.innerHTML = `<div class="ses-title">没找到，试试这些标签：</div><div class="ses-tags">` +
+      tags.map(t => `<span class="ses-chip" data-t="${escapeHtml(t)}">${escapeHtml(t)}</span>`).join('') + `</div>`;
+    box.querySelectorAll('.ses-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        const t = chip.dataset.t;
+        if (!favSel.has(t)) { favSel.add(t); renderFavTags(); updateQuickTagHighlight(); }
+        hideSearchDrop(); clearState(); doSearch(true);
+      });
+    });
   }
 
   // sessionStorage 持久化
@@ -1060,6 +1204,8 @@ function initSearch() {
       if (Array.isArray(s.sel_tags)) { s.sel_tags.forEach(t => favSel.add(t)); }
       if (Array.isArray(s.sel_authors)) { s.sel_authors.forEach(a => authorSel.add(a)); }
       if (s.keyword && s.cards && s.cards.length) {
+        const resultSec = document.getElementById('resultSection');
+        if (resultSec) resultSec.style.display = '';
         keyword = s.keyword; page = s.page || 1; total = s.total || 0;
         renderCards(s.cards, false, grid, searchCardOpts);
         enrichSearchCards(s.cards, grid); // 切回搜索页恢复缓存后仍需补标签（saveState 在 enrich 异步回填前执行，缓存标签可能为空）
@@ -1102,51 +1248,73 @@ function initSearch() {
 
   async function doSearch(reset = true) {
     keyword = input.value.trim();
+    const scope = getScope();
     const selTags = [...favSel];
     const selAuthors = [...authorSel];
     const hasKw = !!keyword, hasTag = selTags.length > 0, hasAuthor = selAuthors.length > 0;
     if (!hasKw && !hasTag && !hasAuthor) { toast('请输入关键词、选择标签或选择作者', 'warn'); return; }
+    setView(true);   // 切到搜索态（隐藏发现区块）
     if (reset) {
       if (keyword) SearchHistory.add(keyword);
       page = 1; grid.innerHTML = ''; total = 0;
       try { sessionStorage.removeItem(SCROLL_KEY); } catch (_) {}
     }
     loading.style.display = 'block'; empty.style.display = 'none';
+    const suggestBox = document.getElementById('searchEmptySuggest');
+    if (suggestBox) suggestBox.style.display = 'none';
     document.getElementById('loadMore').style.display = 'none';
     const mode = getSearchMode();
     const orderBy = sortBySel ? sortBySel.value : 'mr';
     const timeRange = timeSel ? timeSel.value : 'a';
     const sortOrder = dirSel ? dirSel.value : 'desc';
+    const isNum = /^\d+$/.test(keyword);
+    const enc = encodeURIComponent;
     let res, condKw = '', condTags = [], condAuthors = [];
 
     try {
       if (hasTag || hasAuthor) {
-        // 有标签或作者：走联合搜索
-        condTags = selTags; condAuthors = selAuthors; condKw = keyword;
+        // 联合搜索：关键词 + 已选标签 + 已选作者；scope 决定「纯关键词」如何解释
         const params = new URLSearchParams();
-        if (keyword) params.set('keyword', keyword);
-        if (selTags.length) params.set('tags', selTags.join(','));
-        if (selAuthors.length) params.set('author', selAuthors.join(','));
+        if (scope === 'author' && hasKw && !hasAuthor) {
+          params.set('author', keyword); condAuthors = [keyword];
+        } else if (scope === 'tag' && hasKw && !hasTag) {
+          params.set('tags', keyword); condTags = [keyword];
+        } else {
+          if (hasKw) params.set('keyword', keyword);
+          condKw = keyword;
+        }
+        if (selTags.length) { params.set('tags', selTags.join(',')); condTags = condTags.concat(selTags); }
+        if (selAuthors.length) { params.set('author', selAuthors.join(',')); condAuthors = condAuthors.concat(selAuthors); }
         params.set('mode', mode);
         res = await api('GET', `/api/search/combined?${params.toString()}`);
-      } else if (/^\d+$/.test(keyword)) {
-        condKw = keyword;
-        res = await api('GET', `/api/search/jm/${keyword}`);
-      } else {
-        condKw = keyword;
-        res = await api('GET', `/api/search/keyword?keyword=${encodeURIComponent(keyword)}&page=${page}&sort=${sortOrder}&order_by=${orderBy}&time=${timeRange}`);
+      } else if (hasKw) {
+        if (scope === 'author' && !isNum) {
+          condAuthors = [keyword];
+          res = await api('GET', `/api/search/author?author=${enc(keyword)}`);
+        } else if (scope === 'tag') {
+          condTags = [keyword];
+          res = await api('GET', `/api/search/tags?tags=${enc(keyword)}&mode=${mode}`);
+        } else if (isNum) {
+          condKw = keyword;
+          res = await api('GET', `/api/search/jm/${keyword}`);
+        } else {
+          condKw = keyword;
+          res = await api('GET', `/api/search/keyword?keyword=${enc(keyword)}&page=${page}&sort=${sortOrder}&order_by=${orderBy}&time=${timeRange}`);
+        }
       }
       loading.style.display = 'none';
       if (res.success && res.data && res.data.length) {
         renderCards(res.data, true, grid, searchCardOpts); total = res.data.length;
         enrichSearchCards(res.data, grid); // 搜索结果渲染后按需补标签（v2.4.5 起关键词搜索不再带 tags）
         countEl.textContent = `${total} 个结果`;
+        highlightResults(keyword, scope);
         if (!hasTag && !hasAuthor) {
           const hasMore = res.data.length >= 20;
           document.getElementById('loadMore').style.display = hasMore ? 'block' : 'none';
         }
       } else if (res.success) {
         empty.style.display = 'block'; countEl.textContent = '';
+        renderEmptySuggest();
       } else {
         empty.style.display = 'block'; countEl.textContent = '';
         toast(res.message || '搜索失败', 'error');
@@ -1156,13 +1324,20 @@ function initSearch() {
       toast('搜索失败：' + (e.message || e), 'error');
     }
 
-    updateSearchCond(condKw, condTags, condAuthors, mode);
+    updateSearchCond(condKw, condTags, condAuthors, mode, scope);
     attachRipple(grid);
     setupLazyCovers(grid);
     saveState(false);
   }
 
   // ── 事件绑定 ──
+  // 搜索范围 Tab：切换即生效（重新搜索当前条件；纯视觉切换交给模板内脚本）
+  scopeTabs.forEach(t => t.addEventListener('click', () => {
+    scopeTabs.forEach(x => x.classList.remove('is-active'));
+    t.classList.add('is-active');
+    saveSearchPrefs();
+    if (input.value.trim() || favSel.size || authorSel.size) { clearState(); doSearch(true); }
+  }));
   btn.onclick = () => { hideSearchDrop(); clearState(); doSearch(true); };
   input.addEventListener('keydown', e => { if (e.key === 'Enter') { hideSearchDrop(); clearState(); doSearch(true); } });
   input.addEventListener('focus', showSearchDrop);
@@ -1287,6 +1462,28 @@ function initSearch() {
 
   // 恢复上次搜索结果与滚动位置
   const restored = !urlTriggered && loadState();
+
+  // 初始态：带搜索条件进来 / 恢复了上次搜索 → 搜索态；否则显示发现页
+  if (urlTriggered || restored) {
+    setView(true);
+  } else {
+    setView(false);
+    initDiscover();
+  }
+
+  // 「返回发现」：清掉搜索条件与结果，回到发现态（推荐 + 订阅新作）
+  const backToDiscover = document.getElementById('backToDiscover');
+  if (backToDiscover) backToDiscover.onclick = () => {
+    input.value = '';
+    try { sessionStorage.removeItem(SCROLL_KEY); } catch (_) {}
+    grid.innerHTML = '';
+    if (countEl) countEl.textContent = '';
+    if (empty) empty.style.display = 'none';
+    if (typeof clearState === 'function') clearState();
+    setView(false);
+    initDiscover();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
   if (restored) {
     attachRipple(grid);
     setupLazyCovers(grid);
@@ -1326,7 +1523,9 @@ function initSearch() {
 /* ═══════════════════════════════════════════════════════
    主页（推荐）
    ═══════════════════════════════════════════════════════ */
-function initHome() {
+/* 发现页内容（订阅新作 + 为你推荐）
+   v2.11.0：原「主页」并入发现页，本函数由 initSearch 在发现态调用 */
+function initDiscover() {
   const recommendGrid = document.getElementById('recommendGrid');
   const recommendLoading = document.getElementById('recommendLoading');
   const recommendEmpty = document.getElementById('recommendEmpty');
@@ -1362,14 +1561,125 @@ function initHome() {
       if (recommendEmpty) recommendEmpty.style.display = 'block';
     }
   }
-  loadRecommendations();
+  // 推荐流只在首次进发现页时加载（避免每次从搜索结果返回都重新请求）
+  if (!initDiscover._recLoaded) { initDiscover._recLoaded = true; loadRecommendations(); }
+
+  /* ── 订阅更新区块 ─────────────────────────────── */
+  const subSection = document.getElementById('subUpdatesSection');
+  const subList = document.getElementById('subUpdatesList');
+  const subManageBtn = document.getElementById('subManageBtn');
+
+  const subCoverFallback = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='3' height='4'%3E%3C/svg%3E";
+
+  function fmtRelative(ts) {
+    if (!ts) return '';
+    const diff = Date.now() - ts;
+    const m = Math.floor(diff / 60000);
+    if (m < 1) return '刚刚';
+    if (m < 60) return m + ' 分钟前';
+    const h = Math.floor(m / 60);
+    if (h < 24) return h + ' 小时前';
+    const d = Math.floor(h / 24);
+    return d + ' 天前';
+  }
+
+  async function loadSubUpdates() {
+    try {
+      const r = await api('GET', '/api/sub_updates?unseen=1');
+      const items = r.data || [];
+      if (!subSection || !subList) return;
+      if (!items.length) { subSection.style.display = 'none'; return; }
+      subSection.style.display = '';
+      subList.innerHTML = items.map(u => {
+        const cover = u.cover_url ? `src="${escapeHtml(u.cover_url)}"` : `src="${subCoverFallback}"`;
+        const go = u.book_id ? `onclick="location.href='/reader/${u.book_id}'"` : '';
+        return `
+        <div class="sub-update-item" ${go} title="${escapeHtml(u.title || '')}">
+          <img class="sub-update-item__cover" ${cover} loading="lazy"
+               onerror="this.onerror=null;this.src='${subCoverFallback}'">
+          <div class="sub-update-item__info">
+            <div class="sub-update-item__title">${escapeHtml(u.title || '未命名')}</div>
+            <div class="sub-update-item__author">${escapeHtml(u.author || '')}</div>
+          </div>
+          <span class="sub-update-item__time">${fmtRelative(u.found_at)}</span>
+          <span class="sub-update-item__badge">新</span>
+        </div>`;
+      }).join('');
+      attachRipple(subList);
+    } catch (_) {
+      if (subSection) subSection.style.display = 'none';
+    }
+  }
+
+  function openSubManage() {
+    const modal = openModal({
+      title: '管理订阅',
+      bodyHtml: `
+        <div class="sub-manage-add">
+          <input class="sub-manage-input" placeholder="输入作者名并回车订阅" maxlength="64">
+        </div>
+        <div class="sub-manage-list"></div>`,
+      center: true, grip: false
+    });
+    const listEl = modal.overlay.querySelector('.sub-manage-list');
+    const inputEl = modal.overlay.querySelector('.sub-manage-input');
+
+    async function renderSubs() {
+      const r = await api('GET', '/api/subscriptions');
+      const subs = r.data || [];
+      if (!subs.length) {
+        listEl.innerHTML = '<div class="empty" style="padding:22px 0"><p style="margin:0">还没有订阅任何作者</p></div>';
+        return;
+      }
+      listEl.innerHTML = subs.map(s => `
+        <div class="sub-manage-row" data-id="${s.id}">
+          <div class="sub-manage-row__main">
+            <div class="sub-manage-row__name">${escapeHtml(s.author)}</div>
+            <div class="sub-manage-row__meta">${s.new_count ? `<span class="sub-update-item__badge">${s.new_count} 更新</span>` : ''}
+              ${s.last_title ? `<span class="muted">最近：${escapeHtml(s.last_title)}</span>` : ''}</div>
+          </div>
+          <button class="btn btn--sm btn--danger" data-del="${s.id}"><i class="fas fa-trash"></i></button>
+        </div>`).join('');
+      listEl.querySelectorAll('[data-del]').forEach(btn => btn.addEventListener('click', async () => {
+        const sid = btn.dataset.del;
+        const d = await api('DELETE', `/api/subscriptions/${sid}`);
+        if (d.success) { toast('已取消订阅', 'success'); renderSubs(); loadSubUpdates(); }
+        else toast(d.message || '操作失败', 'error');
+      }));
+    }
+
+    inputEl.addEventListener('keydown', async (e) => {
+      if (e.key !== 'Enter') return;
+      const author = inputEl.value.trim();
+      if (!author) return;
+      const r = await api('POST', '/api/subscriptions', { author });
+      if (r.success) { toast('已订阅 ' + author, 'success'); inputEl.value = ''; renderSubs(); loadSubUpdates(); }
+      else toast(r.message || '订阅失败', 'error');
+    });
+
+    renderSubs();
+  }
+
+  const btnAllSeen = document.getElementById('subAllSeenBtn');
+  if (btnAllSeen) btnAllSeen.addEventListener('click', async () => {
+    const r = await api('POST', '/api/sub_updates/seen', { all: true });
+    if (r.success) { toast('已全部标为已读', 'success'); loadSubUpdates(); }
+  });
+  if (subManageBtn) subManageBtn.addEventListener('click', openSubManage);
+  loadSubUpdates();
 }
 
 /* ═══════════════════════════════════════════════════════
    阅读页（书架 + 分类树）
+   v2.13.0：双层分类 UI（块状级联导航 + 折叠管理面板）合并为单一分类树；
+            分类归属改为单选；新增「未归类」收件箱视图；补重命名 / 删除入口。
    ═══════════════════════════════════════════════════════ */
-let _currentCat = null; // null = 全部
+let _currentCat = null; // null = 全部；>=0 = 真实分类 id
+let _viewMode = 'all';   // 'all' | 'favorite' | 'uncategorized'
 const _openNodes = new Set(); // 展开的树节点 id 集合（默认全部展开）
+const VIRTUAL_ALL = 'all';
+const VIRTUAL_FAV = '__fav__';
+const VIRTUAL_UNCAT = '__uncat__';
 function initLibrary() {
   const grid = document.getElementById('comicGrid');
   const treeEl = document.getElementById('catTree');
@@ -1377,74 +1687,202 @@ function initLibrary() {
   const countEl = document.getElementById('currentCatCount');
   const empty = document.getElementById('emptyState');
   let _dragData = null; // {type:'comic'|'category', jmId|catId}
+  let _treeAllOpen = true; // 分类树"全部展开/折叠"状态
+  let _rawTree = [];   // 分类树原始数据（/api/categories?tree=1）
+  let _uncatCount = 0; // 「未归类」本数（loadTree 时顺便统计）
 
   function clearDropTargets() {
     treeEl.querySelectorAll('.drop-target').forEach(x => x.classList.remove('drop-target'));
   }
 
+  function setActiveView(which) {
+    _viewMode = which;
+    if (which !== 'all') {
+      treeEl.querySelectorAll('.tree-item').forEach(x => x.classList.remove('active'));
+    }
+  }
+
+  // 收藏数徽标（挂在分类树「我的收藏」行上）
+  async function refreshQuickCounts() {
+    const r = await api('GET', '/api/downloaded');
+    const list = r.data || [];
+    // 请求返回时 loadTree() 可能已重建过 DOM，故此处重新查询
+    const badge = document.getElementById('favCountBadge');
+    if (badge) badge.textContent = list.filter(c => c.favorite).length;
+    return list;
+  }
+
+  // 拖拽预判：不能把分类拖到自身或自己的子孙下（后端也会拒，这里提前给视觉反馈）
+  function _collectSubtreeIds(tree, id) {
+    const res = [];
+    (function walk(nodes) {
+      for (const n of nodes || []) {
+        if (n.id === id) { (function collect(x) { (x.children || []).forEach(ch => { res.push(ch.id); collect(ch); }); })(n); return; }
+        walk(n.children || []);
+      }
+    })(tree);
+    return res;
+  }
+  function _isDescendant(tree, catId, maybeDescendant) {
+    return catId !== maybeDescendant && _collectSubtreeIds(tree, catId).includes(maybeDescendant);
+  }
+
+  function specialRow(key, icon, label, extra = '') {
+    const active =
+      (key === VIRTUAL_ALL && _viewMode === 'all' && _currentCat == null) ||
+      (key === VIRTUAL_FAV && _viewMode === 'favorite') ||
+      (key === VIRTUAL_UNCAT && _viewMode === 'uncategorized');
+    return `<div class="tree-item ${active ? 'active' : ''}" data-virtual="${key}">
+        <i class="fas ${icon} tree-item__icon"></i>
+        <span class="tree-item__name">${label}</span>
+        ${extra}
+      </div>`;
+  }
+
   async function loadTree() {
-    const r = await api('GET', '/api/categories?tree=1');
+    const [r, uncatR] = await Promise.all([
+      api('GET', '/api/categories?tree=1'),
+      api('GET', '/api/downloaded?uncategorized=1'),
+    ]);
     const tree = r.data || [];
+    _rawTree = tree;
+    _uncatCount = ((uncatR && uncatR.data) || []).length;
     let totalComics = 0;
     tree.forEach(countSub);
     function countSub(n) { totalComics += (n.count || n.comic_count || 0); (n.children || []).forEach(countSub); }
-    // 收集所有节点 id 并默认展开
+    // 收集/清空所有节点 id，用于"全部展开/折叠"
     function collectIds(nodes) { nodes.forEach(n => { _openNodes.add(n.id); (n.children || []).length && collectIds(n.children); }); }
-    collectIds(tree);
-    let html = `<div class="tree-item ${_currentCat == null ? 'active' : ''}" data-cat="all">
-        <i class="fas fa-layer-group tree-item__icon"></i>
-        <span class="tree-item__name">全部漫画</span>
-        <span class="tree-item__count">${totalComics}</span>
-      </div>`;
+    function clearIds(nodes) { nodes.forEach(n => { _openNodes.delete(n.id); (n.children || []).length && clearIds(n.children); }); }
+    // 「折叠全部 / 展开全部」一键按钮（放在每个分类 id 集合之上，避免重复绑定）
+    const toggleAllBtn = document.getElementById('treeToggleAll');
+    if (toggleAllBtn && toggleAllBtn.dataset.bound !== '1') {
+      toggleAllBtn.dataset.bound = '1';
+      const syncBtn = () => {
+        toggleAllBtn.innerHTML = _treeAllOpen
+          ? '<i class="fas fa-folder-minus"></i>'
+          : '<i class="fas fa-folder-plus"></i>';
+        toggleAllBtn.title = _treeAllOpen ? '折叠全部子分类' : '展开全部子分类';
+      };
+      toggleAllBtn.addEventListener('click', async () => {
+        _treeAllOpen = !_treeAllOpen;
+        syncBtn();
+        await loadTree();
+      });
+      syncBtn();
+    }
+    if (_treeAllOpen) collectIds(tree); else clearIds(tree);
+
+    // 虚拟行（全部 / 收藏 / 未归类）+ 真实分类树，合并在同一棵树里
+    let html = `<div class="tree-group"><i class="fas fa-th-large"></i>视图</div>`;
+    html += specialRow(VIRTUAL_ALL, 'fa-layer-group', '全部漫画',
+      `<span class="tree-item__count">${totalComics}</span>`);
+    html += specialRow(VIRTUAL_FAV, 'fa-star', '我的收藏',
+      `<span class="tree-item__badge" id="favCountBadge"></span>`);
+    html += specialRow(VIRTUAL_UNCAT, 'fa-inbox', '未归类',
+      `<span class="tree-item__count">${_uncatCount}</span>`);
+    html += `<div class="tree-sep"></div>`;
+    html += `<div class="tree-group"><i class="fas fa-folder"></i>我的分类</div>`;
     html += renderTree(tree, 0);
+
     treeEl.innerHTML = html;
-    treeEl.querySelectorAll('.tree-item').forEach(it => {
+
+    // 虚拟行：切换视图
+    treeEl.querySelectorAll('.tree-item[data-virtual]').forEach(it => {
+      it.onclick = () => {
+        const key = it.dataset.virtual;
+        if (key === VIRTUAL_ALL) { _viewMode = 'all'; _currentCat = null; }
+        else if (key === VIRTUAL_FAV) { _viewMode = 'favorite'; _currentCat = null; }
+        else { _viewMode = 'uncategorized'; _currentCat = null; }
+        treeEl.querySelectorAll('.tree-item').forEach(x => x.classList.remove('active'));
+        it.classList.add('active');
+        loadComics();
+      };
+    });
+
+    // 「未归类」行可作为拖放目标：把漫画拖进来 = 取消它现有的全部分类
+    const uncatRow = treeEl.querySelector(`.tree-item[data-virtual="${VIRTUAL_UNCAT}"]`);
+    if (uncatRow) {
+      uncatRow.addEventListener('dragover', (e) => {
+        if (!_dragData || _dragData.type !== 'comic') return;
+        e.preventDefault();
+        uncatRow.classList.add('drop-target');
+      });
+      uncatRow.addEventListener('dragleave', () => uncatRow.classList.remove('drop-target'));
+      uncatRow.addEventListener('drop', async (e) => {
+        e.preventDefault();
+        uncatRow.classList.remove('drop-target');
+        if (!_dragData || _dragData.type !== 'comic') return;
+        const jmId = _dragData.jmId;
+        _dragData = null;
+        await moveComicToCategory(jmId, null);
+      });
+    }
+
+    treeEl.querySelectorAll('.tree-item[data-cat]').forEach(it => {
       const catId = it.dataset.cat;
       it.onclick = (e) => {
-        if (e.target.closest('.cat-move-btn')) return; // 点移动按钮不触发选择
-        const v = catId;
-        _currentCat = v === 'all' ? null : parseInt(v);
+        if (e.target.closest('.tree-item__actbtn')) return; // 点增删改按钮不触发选择
+        if (e.target.closest('[data-toggle]')) return;      // 点折叠箭头不触发选择
+        setActiveView('all');
+        _currentCat = parseInt(catId);
         treeEl.querySelectorAll('.tree-item').forEach(x => x.classList.remove('active'));
         it.classList.add('active');
         loadComics();
       };
       // 分类可拖动（用于调整层级）
-      if (catId !== 'all') {
-        it.setAttribute('draggable', 'true');
-        it.addEventListener('dragstart', (e) => {
-          _dragData = { type: 'category', catId: parseInt(catId) };
-          it.classList.add('dragging');
-          e.dataTransfer.effectAllowed = 'move';
-          try { e.dataTransfer.setData('text/plain', String(catId)); } catch (_) {}
-        });
-        it.addEventListener('dragend', () => { _dragData = null; it.classList.remove('dragging'); clearDropTargets(); });
-      }
+      it.setAttribute('draggable', 'true');
+      it.addEventListener('dragstart', (e) => {
+        _dragData = { type: 'category', catId: parseInt(catId) };
+        it.classList.add('dragging');
+        e.dataTransfer.effectAllowed = 'move';
+        try { e.dataTransfer.setData('text/plain', String(catId)); } catch (_) {}
+      });
+      it.addEventListener('dragend', () => { _dragData = null; it.classList.remove('dragging'); clearDropTargets(); });
       // 作为放置目标：接受漫画（移动分类）或分类（调整父级）
       it.addEventListener('dragover', (e) => {
         if (!_dragData) return;
-        if (_dragData.type === 'category' && _dragData.catId === parseInt(catId)) return;
+        const target = parseInt(catId);
+        if (_dragData.type === 'category') {
+          // v2.13.0 预判：拖到自身 / 自己的子孙 → 直接不给放，并标红
+          if (_dragData.catId === target) return;
+          if (_isDescendant(_rawTree, _dragData.catId, target)) {
+            it.classList.add('drop-invalid');
+            return;
+          }
+        }
         e.preventDefault();
         it.classList.add('drop-target');
       });
-      it.addEventListener('dragleave', () => it.classList.remove('drop-target'));
-      it.addEventListener('drop', (e) => {
+      it.addEventListener('dragleave', () => {
+        it.classList.remove('drop-target');
+        it.classList.remove('drop-invalid');
+      });
+      it.addEventListener('drop', async (e) => {
         e.preventDefault();
         it.classList.remove('drop-target');
+        it.classList.remove('drop-invalid');
         if (!_dragData) return;
+        const target = parseInt(catId);
         if (_dragData.type === 'comic') {
-          if (catId === 'all') moveComicToCategory(_dragData.jmId, null);
-          else moveComicToCategory(_dragData.jmId, parseInt(catId));
-        } else if (_dragData.type === 'category' && _dragData.catId !== parseInt(catId)) {
-          moveCategoryToParent(_dragData.catId, parseInt(catId));
+          await moveComicToCategory(_dragData.jmId, target);
+        } else if (_dragData.type === 'category' && _dragData.catId !== target) {
+          if (_isDescendant(_rawTree, _dragData.catId, target)) {
+            toast('不能移动到其子分类下', 'warn');
+            _dragData = null;
+            return;
+          }
+          await moveCategoryToParent(_dragData.catId, target);
         }
         _dragData = null;
       });
     });
-    // 分类移动按钮（移动端友好）
-    treeEl.querySelectorAll('.cat-move-btn').forEach(btn => {
-      btn.addEventListener('click', (e) => {
+    // v2.13.0：分类重命名 / 删除按钮（替换原「移动到其他分类」按钮）
+    treeEl.querySelectorAll('.tree-item__actbtn').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
         e.stopPropagation();
-        openCategoryMovePicker(parseInt(btn.dataset.cat), tree);
+        const cid = parseInt(btn.dataset.cat);
+        if (btn.dataset.act === 'rename') await renameCategory(cid, tree);
+        else await deleteCategoryFlow(cid, tree);
       });
     });
     // 展开/折叠切换
@@ -1467,7 +1905,97 @@ function initLibrary() {
         }
       });
     });
+    // 收藏数徽标随 DOM 重建，重新取一次
+    refreshQuickCounts();
   }
+
+  /* ── 分类重命名 ── */
+  async function renameCategory(catId, tree) {
+    const node = _findCatNode(tree, catId);
+    if (!node) return;
+    const name = prompt('重命名分类：', node.name);
+    if (name == null) return;
+    const trimmed = String(name).trim();
+    if (!trimmed || trimmed === node.name) return;
+    const r = await api('PUT', `/api/categories/${catId}`, { name: trimmed });
+    if (r.success) { toast('已重命名', 'success'); loadTree(); loadComics(); }
+    else toast(r.message || '重命名失败', 'error');
+  }
+
+  /* ── 分类删除：非空时必须选择漫画去向（对齐 Android deleteCategoryWithReassign）── */
+  async function deleteCategoryFlow(catId, tree) {
+    const node = _findCatNode(tree, catId);
+    if (!node) return;
+    const cnt = await api('GET', `/api/categories/${catId}?count_only=1`);
+    const n = (cnt && cnt.count) || 0;
+
+    if (n === 0) {
+      if (!confirm(`确定删除分类「${node.name}」？该分类下没有漫画。`)) return;
+      const r = await api('DELETE', `/api/categories/${catId}`, { reassign_to: null });
+      if (r.success) {
+        toast('已删除分类', 'success');
+        if (_currentCat === catId) { _currentCat = null; _viewMode = 'all'; }
+        loadTree(); loadComics();
+      } else toast(r.message || '删除失败', 'error');
+      return;
+    }
+
+    // 非空：列出可选去向（排除自身与子孙），必须选一个
+    const forbidden = new Set([catId, ..._collectSubtreeIds(tree, catId)]);
+    const flat = [];
+    (function walk(ns, depth) {
+      ns.forEach(x => {
+        if (!forbidden.has(x.id)) flat.push({ id: x.id, name: x.name, depth });
+        walk(x.children || [], depth + 1);
+      });
+    })(tree, 0);
+
+    const bodyHtml = `<div style="font-size:13px;color:var(--d-text-2);margin-bottom:10px">
+        该分类下有 <b>${n}</b> 部漫画，请选择将它们移动到哪里：
+      </div>
+      <div class="tree">${flat.map(x => `
+        <div class="tree-item" data-pick="${x.id}" style="padding-left:${10 + x.depth * 14}px">
+          <i class="fas fa-folder tree-item__icon"></i>
+          <span class="tree-item__name">${escapeHtml(x.name)}</span>
+        </div>`).join('')}
+        <div class="tree-item" data-pick="">
+          <i class="fas fa-inbox tree-item__icon"></i>
+          <span class="tree-item__name">未归类</span>
+        </div>
+      </div>`;
+    const { close } = openModal({
+      title: `删除「${escapeHtml(node.name)}」`,
+      sub: '删除前请先安排漫画去向，不会丢失任何漫画',
+      bodyHtml,
+      actions: [{ key: 'cancel', label: '取消', cls: 'btn--ghost', onClick: c => c() }],
+    });
+    document.querySelectorAll('[data-pick]').forEach(el => {
+      el.onclick = async () => {
+        const raw = el.dataset.pick;
+        const target = raw === '' ? null : parseInt(raw);
+        close();
+        const r = await api('DELETE', `/api/categories/${catId}`, { reassign_to: target });
+        if (r.success) {
+          toast(target == null ? `已删除，${n} 部漫画移入未归类` : `已删除，${n} 部漫画已移动`, 'success');
+          if (_currentCat === catId) { _currentCat = null; _viewMode = 'all'; }
+          loadTree(); loadComics();
+        } else toast(r.message || '删除失败', 'error');
+      };
+    });
+  }
+
+  function _findCatNode(tree, id) {
+    let found = null;
+    (function walk(ns) {
+      for (const n of ns || []) {
+        if (n.id === id) { found = n; return; }
+        walk(n.children || []);
+        if (found) return;
+      }
+    })(tree);
+    return found;
+  }
+
   function renderTree(nodes, depth) {
     return nodes.map(n => {
       const hasChildren = n.children && n.children.length;
@@ -1481,20 +2009,62 @@ function initLibrary() {
         <i class="fas fa-folder tree-item__icon"></i>
         <span class="tree-item__name">${escapeHtml(n.name)}</span>
         <span class="tree-item__count">${count}</span>
-        <button class="cat-move-btn" data-cat="${n.id}" title="移动到其他分类"><i class="fas fa-arrows-up-down-left-right"></i></button>
+        <span class="tree-item__acts">
+          <button class="tree-item__actbtn" data-cat="${n.id}" data-act="rename" title="重命名"><i class="fas fa-pen"></i></button>
+          <button class="tree-item__actbtn tree-item__actbtn--danger" data-cat="${n.id}" data-act="del" title="删除分类"><i class="fas fa-trash-can"></i></button>
+        </span>
       </div>` + (hasChildren ? `<div class="tree-children" data-parent="${n.id}" style="${isOpen ? '' : 'display:none'}">${renderTree(n.children, depth + 1)}</div>` : '');
     }).join('');
   }
 
+  async function moveComicToCategory(jmId, catId) {
+    const res = await api('PUT', `/api/comic/${jmId}/categories`, { category_ids: catId == null ? [] : [catId] });
+    if (res.success) {
+      const t = catId == null ? '已移入「未归类」' : '已移动到该分类';
+      toast(t, 'success');
+      loadTree(); loadComics();
+    } else toast(res.message || '移动失败', 'error');
+  }
+
   async function loadComics() {
-    const url = _currentCat != null ? `/api/downloaded?category_id=${_currentCat}` : '/api/downloaded';
+    // 未归类 / 具体分类由后端筛选；收藏、读完为前端过滤
+    let url = '/api/downloaded';
+    if (_viewMode === 'uncategorized') url = '/api/downloaded?uncategorized=1';
+    else if (_currentCat != null) url = `/api/downloaded?category_id=${_currentCat}`;
     const r = await api('GET', url);
-    const list = r.data || [];
-    nameEl.textContent = _currentCat == null ? '全部漫画' : '分类';
+    let list = r.data || [];
+    if (_viewMode === 'favorite') list = list.filter(c => c.favorite);
+    else if (_viewMode === 'finished') list = list.filter(c => c.finished);
+    if (_viewMode === 'favorite') nameEl.textContent = '我的收藏';
+    else if (_viewMode === 'finished') nameEl.textContent = '读完作品';
+    else if (_viewMode === 'uncategorized') nameEl.textContent = '未归类';
+    else {
+      const pn = _findPathNodes();
+      nameEl.textContent = _currentCat == null ? '全部漫画' : (pn.length ? pn[pn.length - 1].name : '分类');
+    }
     countEl.textContent = `${list.length} 本`;
     if (!list.length) {
       grid.innerHTML = '';
-      empty.style.display = 'block'; attachRipple(empty); return;
+      empty.style.display = 'block';
+      if (_viewMode === 'favorite') {
+        empty.querySelector('h3').textContent = '还没有收藏任何漫画';
+        const iconEl = empty.querySelector('.empty__icon');
+        if (iconEl) iconEl.innerHTML = '<i class="fas fa-star"></i>';
+      } else if (_viewMode === 'finished') {
+        empty.querySelector('h3').textContent = '还没有读完的作品';
+        const iconEl = empty.querySelector('.empty__icon');
+        if (iconEl) iconEl.innerHTML = '<i class="fas fa-circle-check"></i>';
+      } else if (_viewMode === 'uncategorized') {
+        empty.querySelector('h3').textContent = '没有未归类的漫画';
+        const iconEl = empty.querySelector('.empty__icon');
+        if (iconEl) iconEl.innerHTML = '<i class="fas fa-inbox"></i>';
+      } else {
+        empty.querySelector('h3').textContent = '这个分类还是空的';
+        const iconEl = empty.querySelector('.empty__icon');
+        if (iconEl) iconEl.innerHTML = '<i class="fas fa-folder-open"></i>';
+      }
+      attachRipple(empty);
+      return;
     }
     empty.style.display = 'none';
     grid.innerHTML = '';
@@ -1523,17 +2093,60 @@ function initLibrary() {
           ${renderPageChapter(c.pages, c.chapter_count)}
           <div style="margin:6px 0">${cats}</div>
           <div class="comic-card__actions">
+            <button class="btn" data-act="fav" title="收藏"><i class="fas fa-star"></i></button>
+            <button class="btn" data-act="fin" title="读完"><i class="fas fa-check"></i></button>
             <button class="btn btn--primary" data-act="read">阅读</button>
             <button class="btn" data-act="del"><i class="fas fa-trash"></i></button>
           </div>
         </div>`;
+      // 点卡片空白 → 详情页（封面仍是"直接阅读"的快捷路径，按钮各自处理）
+      card.style.cursor = 'pointer';
+      card.onclick = (e) => {
+        if (e.target.closest('[data-act], .comic-card__cover, .comic-card__actions, .chip')) return;
+        location.href = '/detail/' + id;
+      };
       card.querySelector('[data-act="read"]').onclick = () => location.href = `/reader/${id}`;
+      if (c.favorite) card.querySelector('[data-act="fav"]').classList.add('on');
+      if (c.finished) card.querySelector('[data-act="fin"]').classList.add('on');
+      card.querySelector('[data-act="fav"]').onclick = async (e) => {
+        e.stopPropagation();
+        const r = await api('POST', `/api/status/${id}/favorite`);
+        if (r.success) {
+          e.currentTarget.classList.toggle('on', !!r.favorite);
+          toast(r.favorite ? '已收藏' : '已取消收藏', 'success');
+          // 在「我的收藏」视图里取消收藏 → 卡片立即消失
+          if (!r.favorite && _viewMode === 'favorite') {
+            card.style.transition = 'opacity 180ms, transform 180ms';
+            card.style.opacity = '0';
+            card.style.transform = 'scale(0.96)';
+            setTimeout(() => { card.remove(); _afterListChanged(); }, 180);
+          } else {
+            refreshQuickCounts(); syncEmptyAndCount();
+          }
+        } else toast(r.message || '操作失败', 'error');
+      };
+      card.querySelector('[data-act="fin"]').onclick = async (e) => {
+        e.stopPropagation();
+        const r = await api('POST', `/api/status/${id}/finished`);
+        if (r.success) {
+          e.currentTarget.classList.toggle('on', !!r.finished);
+          toast(r.finished ? '已标记读完' : '已取消读完标记', 'success');
+          if (!r.finished && _viewMode === 'finished') {
+            card.style.transition = 'opacity 180ms, transform 180ms';
+            card.style.opacity = '0';
+            card.style.transform = 'scale(0.96)';
+            setTimeout(() => { card.remove(); _afterListChanged(); }, 180);
+          } else {
+            refreshQuickCounts(); syncEmptyAndCount();
+          }
+        } else toast(r.message || '操作失败', 'error');
+      };
       card.querySelector('[data-act="del"]').onclick = async (e) => {
         e.stopPropagation();
-        if (!confirm('确定删除这本漫画？（仅本地文件）')) return;
+        if (!confirm('移入回收站：立即删除本地图片，记录与封面保留 7 天，期间可重新下载拾回。继续？')) return;
         const d = await api('DELETE', `/api/delete/${id}`);
-        if (d.success) { toast('已删除', 'success'); loadComics(); loadTree(); }
-        else toast(d.message || '删除失败', 'error');
+        if (d.success) { toast('已移入回收站', 'success'); card.remove(); _afterListChanged(); loadTree(); }
+        else toast(d.message || '移入回收站失败', 'error');
       };
       card.querySelector('[data-act="move"]').onclick = async (e) => {
         e.stopPropagation();
@@ -1556,61 +2169,24 @@ function initLibrary() {
     attachRipple(grid);
   }
 
-  async function moveComicToCategory(jmId, catId) {
-    const cids = catId == null ? [] : [catId];
-    const res = await api('PUT', `/api/comic/${jmId}/categories`, { category_ids: cids });
-    if (res.success) {
-      toast(catId == null ? '已移到「全部」（取消分类）' : '已移动分类', 'success');
-      loadComics(); loadTree();
-    } else toast(res.message || '移动失败', 'error');
-  }
-
   async function moveCategoryToParent(catId, parentId) {
     const res = await api('POST', `/api/categories/${catId}/move`, { parent_id: parentId });
     if (res.success) { toast('已移动分类', 'success'); loadTree(); loadComics(); }
     else toast(res.message || '移动失败', 'error');
   }
 
-  function collectDescendantIds(tree, id) {
-    const res = [];
-    (function walk(ns) {
-      for (const n of ns) {
-        if (n.id === id) {
-          (function collect(x) { (x.children || []).forEach(ch => { res.push(ch.id); collect(ch); }); })(n);
-          return;
-        }
-        walk(n.children || []);
-      }
-    })(tree);
-    return res;
+  function syncEmptyAndCount() {
+    const cards = grid.querySelectorAll('.comic-card');
+    countEl.textContent = `${cards.length} 本`;
+    if (cards.length === 0) {
+      // 触发一次 loadComics 会自动按当前视图渲染正确空态
+      loadComics();
+    } else {
+      empty.style.display = 'none';
+    }
   }
-
-  function openCategoryMovePicker(catId, tree) {
-    const forbidden = new Set([catId, ...collectDescendantIds(tree, catId)]);
-    const flat = [];
-    (function walk(ns, depth) {
-      ns.forEach(n => {
-        if (!forbidden.has(n.id)) flat.push({ id: n.id, name: n.name, depth });
-        walk(n.children || [], depth + 1);
-      });
-    })(tree, 0);
-    flat.unshift({ id: 0, name: '（根目录 / 顶级分类）', depth: 0 });
-    const bodyHtml = `<div class="tree">${flat.map(n => `
-      <div class="tree-item" data-pick="${n.id}" style="padding-left:${10 + n.depth * 14}px">
-        <i class="fas ${n.id === 0 ? 'fa-layer-group' : 'fa-folder'} tree-item__icon"></i>
-        <span class="tree-item__name">${escapeHtml(n.name)}</span>
-      </div>`).join('')}</div>`;
-    const { close } = openModal({
-      title: '移动到…', sub: '选择该分类的新父级', bodyHtml,
-      actions: [{ key: 'cancel', label: '取消', cls: 'btn--ghost', onClick: c => c() }],
-    });
-    document.querySelectorAll('[data-pick]').forEach(el => {
-      el.onclick = async () => {
-        const pid = parseInt(el.dataset.pick) || null;
-        close();
-        await moveCategoryToParent(catId, pid);
-      };
-    });
+  function _afterListChanged() {
+    refreshQuickCounts(); syncEmptyAndCount();
   }
 
   document.getElementById('newCatBtn').onclick = async () => {
@@ -1627,6 +2203,7 @@ function initLibrary() {
     if (r.success) { toast('已创建', 'success'); loadTree(); }
   };
 
+  setActiveView('all');
   loadTree();
   loadComics();
 }
@@ -1646,17 +2223,8 @@ async function reDownloadFromHistory(jmId) {
    设置页
    ═══════════════════════════════════════════════════════ */
 function initSettings() {
-  // 缓存
-  api('GET', '/api/cache/status').then(r => {
-    if (r.success) document.getElementById('cacheSize').textContent = `${r.data.cache_size_mb} MB`;
-  });
-  document.getElementById('clearCacheBtn').onclick = async () => {
-    const r = await api('POST', '/api/cache/clear');
-    if (r.success) { toast(`已清理 ${r.data.cleared_size_mb} MB`, 'success');
-      document.getElementById('cacheSize').textContent = `${r.data.remaining_size_mb} MB`; }
-  };
-
   // 分类钻取导航：点分类块 → 展开对应详情面板；返回回到上一层（主页或父级面板）
+  // 注：v2.7 起子页走真实路由 /settings/<sub>，这段兼容逻辑仅为未迁移的老 drill-panel 兜底（无相关 DOM 时静默不报错）
   const settingsHome = document.getElementById('settingsHome');
   const settingsDetail = document.getElementById('settingsDetail');
   const drillStack = []; // 记录父级面板 cat，支持屏蔽管理 → 搜索设置 这样的二级返回
@@ -1699,39 +2267,12 @@ function initSettings() {
   // 搜索偏好库（历史 / 标签 / 作者 统一管理，误删可恢复）—— 现在内嵌在「搜索设置」分类里
   initPrefLib();
 
-  // 收藏标签高亮模式（已从搜索下拉面板移到搜索设置）
-  const favTagHighlight = document.getElementById('favTagHighlight');
-  if (favTagHighlight) {
-    favTagHighlight.value = Settings.get('fav_tag_highlight', 'same');
-    favTagHighlight.addEventListener('change', () => {
-      Settings.set('fav_tag_highlight', favTagHighlight.value);
-      // 刷新当前结果卡片上的标签高亮
-      const favArr = FavTags.list();
-      document.querySelectorAll('.comic-card').forEach(card => {
-        const tags = (card.dataset.tags || '').split(',').filter(Boolean);
-        const tagsEl = card.querySelector('.comic-card__tags');
-        if (!tagsEl) return;
-        tagsEl.innerHTML = cardTagsHtml(tags, new Set(), favArr);
-        tagsEl.querySelectorAll('.comic-card__tag').forEach(tg => {
-          tg.addEventListener('click', (e) => {
-            e.stopPropagation();
-            const t = tg.dataset.tag;
-            if (FavTags.contains(t)) { FavTags.remove(t); tg.classList.remove('on'); }
-            else { FavTags.add(t); tg.classList.add('on'); }
-          });
-          tg.addEventListener('contextmenu', (e) => {
-            e.preventDefault(); e.stopPropagation();
-            showTagContextMenu(e.clientX, e.clientY, tg.dataset.tag, tg);
-          });
-        });
-      });
-    });
-  }
-
   // 设置项加载
   api('GET', '/api/settings').then(r => {
     if (!r.success) return; const s = r.data;
     appConfigCache = s;
+
+    // P1-下载（相关 DOM 仅在 /settings/download 存在，其余子页/主页跳过不赋值）
     const maxConcurrentEl = document.getElementById('maxConcurrent');
     const maxConcurrentValEl = document.getElementById('maxConcurrentVal');
     if (s.max_concurrent_downloads && maxConcurrentEl) maxConcurrentEl.value = s.max_concurrent_downloads;
@@ -1739,54 +2280,241 @@ function initSettings() {
       maxConcurrentValEl.textContent = maxConcurrentEl.value;
       maxConcurrentEl.addEventListener('input', () => { maxConcurrentValEl.textContent = maxConcurrentEl.value; });
     }
-    if (s.image_quality) document.getElementById('imageQuality').value = s.image_quality;
-    if (s.auto_cleanup_cache) document.getElementById('autoCleanup').checked = s.auto_cleanup_cache === '1' || s.auto_cleanup_cache === true || s.auto_cleanup_cache === 'true';
-    if (s.proxy_enabled) document.getElementById('proxyEnabled').checked = s.proxy_enabled === '1' || s.proxy_enabled === true || s.proxy_enabled === 'true';
-    if (s.proxy_url) document.getElementById('proxyUrl').value = s.proxy_url;
+    const iqEl = document.getElementById('imageQuality');
+    if (iqEl && s.image_quality) iqEl.value = s.image_quality;
+    const peEl = document.getElementById('proxyEnabled');
+    if (peEl) peEl.checked = s.proxy_enabled === '1' || s.proxy_enabled === true || s.proxy_enabled === 'true';
+    const puEl = document.getElementById('proxyUrl');
+    if (puEl && s.proxy_url) puEl.value = s.proxy_url;
+    const cacheSizeEl = document.getElementById('cacheSize');
+    const clearCacheBtn = document.getElementById('clearCacheBtn');
+    if (cacheSizeEl) api('GET', '/api/cache/status').then(rr => { if (rr.success) cacheSizeEl.textContent = `${rr.data.cache_size_mb} MB`; });
+    if (clearCacheBtn) clearCacheBtn.onclick = async () => {
+      const rr = await api('POST', '/api/cache/clear');
+      if (rr.success) {
+        toast(`已清理 ${rr.data.cleared_size_mb} MB`, 'success');
+        const rem = (cacheSizeEl && cacheSizeEl.textContent.replace(/[^0-9.]/g, '')) || '0';
+        cacheSizeEl.textContent = `${rr.data.remaining_size_mb || Number(rem || 0).toFixed(2)} MB`;
+      }
+    };
+
+    // P1-外观（主题 + 夜间）
+    const themeModeEl = document.getElementById('themeMode');
+    const themeNightStartEl = document.getElementById('themeNightStart');
+    const themeNightEndEl = document.getElementById('themeNightEnd');
+    const themeAutoRow = document.querySelector('.theme-auto-row');
+    if (themeModeEl) {
+      const pref = String(s.theme || 'system').toLowerCase();
+      themeModeEl.value = ['system','light','dark','auto'].includes(pref) ? pref : 'system';
+      if (themeAutoRow) themeAutoRow.style.display = (pref === 'auto') ? '' : 'none';
+      themeModeEl.addEventListener('change', () => {
+        if (themeAutoRow) themeAutoRow.style.display = (themeModeEl.value === 'auto') ? '' : 'none';
+        Theme.setPreferred(themeModeEl.value, { start: themeNightStartEl.value || '22:00', end: themeNightEndEl.value || '06:00' });
+        Theme.savePreferred();
+        toast('主题已保存', 'success');
+      });
+    }
+    if (themeNightStartEl) {
+      themeNightStartEl.value = s.theme_night_start || '22:00';
+      themeNightStartEl.addEventListener('change', () => {
+        Theme.setPreferred(themeModeEl ? themeModeEl.value : 'auto', { start: themeNightStartEl.value || '22:00', end: (themeNightEndEl && themeNightEndEl.value) || '06:00' });
+        Theme.savePreferred();
+      });
+    }
+    if (themeNightEndEl) {
+      themeNightEndEl.value = s.theme_night_end || '06:00';
+      themeNightEndEl.addEventListener('change', () => {
+        Theme.setPreferred(themeModeEl ? themeModeEl.value : 'auto', { start: (themeNightStartEl && themeNightStartEl.value) || '22:00', end: themeNightEndEl.value || '06:00' });
+        Theme.savePreferred();
+      });
+    }
+    // 同步后端主题配置到 Theme（全局 applyGlobalSettings 也会做，这里保证子页里显示对）
+    const pref = String(s.theme || 'system').toLowerCase();
+    Theme.setPreferred(pref, { start: s.theme_night_start || Theme._nightStart, end: s.theme_night_end || Theme._nightEnd });
+
+    // P1-搜索
     const limit = parseInt(s.search_result_limit, 10);
-    document.getElementById('searchResultLimit').value = (isNaN(limit) || limit < 10) ? 80 : limit;
-    if (s.search_priority) document.getElementById('searchPriority').value = (s.search_priority === 'equal') ? 'equal' : 'input';
-    const hidePC = s.hide_page_chapter === '1' || s.hide_page_chapter === true || s.hide_page_chapter === 'true';
-    document.getElementById('hidePageChapter').checked = hidePC;
-    document.body.classList.toggle('hide-page-chapter', hidePC);
-    const showBH = s.show_block_hits !== '0';
-    document.getElementById('showBlockHits').checked = showBH;
-    if (s.theme) Theme.set(s.theme);
+    if (document.getElementById('searchResultLimit')) document.getElementById('searchResultLimit').value = (isNaN(limit) || limit < 10) ? 80 : limit;
     const tagLimitEl = document.getElementById('searchTagLimit');
     if (tagLimitEl) {
       const tl = parseInt(s.search_tag_limit, 10);
       tagLimitEl.value = (isNaN(tl) || tl < 0) ? 0 : tl;
     }
+    const defaultSortEl = document.getElementById('defaultSort');
+    if (defaultSortEl) defaultSortEl.value = (['mr','mv','mp'].includes(String(s.default_sort || '').toLowerCase())) ? s.default_sort : 'mr';
+    const sbBeh = document.getElementById('searchBarBehavior');
+    if (sbBeh) sbBeh.value = (['stay','hide'].includes(String(s.search_bar_behavior || '').toLowerCase())) ? s.search_bar_behavior : 'hide';
+    const hd = document.getElementById('hideDownloadedInSearch');
+    if (hd) hd.value = (['off','gray','hide'].includes(String(s.hide_downloaded_in_search || '').toLowerCase())) ? s.hide_downloaded_in_search : 'hide';
+    const hf = document.getElementById('hideFinishedInSearch');
+    if (hf) hf.value = (['off','gray','hide'].includes(String(s.hide_finished_in_search || '').toLowerCase())) ? s.hide_finished_in_search : 'hide';
+    const sabEl = document.getElementById('searchApplyBlocks');
+    if (sabEl) sabEl.checked = s.search_apply_blocks !== '0';
+
+    // P2-标签库：兴趣库/实验库 即时计数
+    const tCnt = document.getElementById('libTagCount');
+    if (tCnt) tCnt.textContent = s.tag_count || 0;
+    const tCnt2 = document.getElementById('libTagCount2');
+    if (tCnt2) tCnt2.textContent = s.tag_count || 0;
+    const eCnt = document.getElementById('libExpTagCount');
+    if (eCnt) eCnt.textContent = s.exp_tag_count || 0;
+    const eCnt2 = document.getElementById('libExpTagCount2');
+    if (eCnt2) eCnt2.textContent = s.exp_tag_count || 0;
+
+    // P2-智能关联配置绑定
+    const sa = document.getElementById('smartAssociation');
+    if (sa) sa.checked = s.smart_association !== '0';
+    const minHits = parseInt(s.pref_min_hits, 10);
+    const minHitsEl = document.getElementById('prefMinHits');
+    if (minHitsEl) {
+      const v = (isNaN(minHits) || minHits < 2) ? 4 : Math.min(20, minHits);
+      minHitsEl.value = v;
+      const label = document.getElementById('prefMinHitsVal');
+      if (label) label.textContent = v;
+    }
+    const maxTags = parseInt(s.pref_max_tags, 10);
+    const maxTagsEl = document.getElementById('prefMaxTags');
+    if (maxTagsEl) {
+      const v = (isNaN(maxTags) || maxTags < 3) ? 25 : Math.min(200, maxTags);
+      maxTagsEl.value = v;
+      const label = document.getElementById('prefMaxTagsVal');
+      if (label) label.textContent = v;
+    }
+    const stratHn = String(s.search_strategy || 'hybrid');
+    const stratHnEl = document.getElementById('searchStrategyHn');
+    if (stratHnEl) stratHnEl.checked = (stratHn === 'hybrid');
+    const stratHd = document.getElementById('searchStrategyHd');
+    if (stratHd) stratHd.checked = (stratHn === 'hybrid_default');
+    const recStrat = String(s.recommend_strategy || 'hybrid');
+    const recStratEl = document.getElementById('recommendStrategy');
+    if (recStratEl) recStratEl.checked = (recStrat !== 'weighted_only');
+    const hideIrrEl = document.getElementById('hideIrrelevant');
+    if (hideIrrEl) hideIrrEl.checked = s.hide_irrelevant !== '0';
+
+    // 智能关联滑块的即时 label 更新
+    if (minHitsEl) minHitsEl.addEventListener('input', () => {
+      const label = document.getElementById('prefMinHitsVal'); if (label) label.textContent = minHitsEl.value;
+    });
+    if (maxTagsEl) maxTagsEl.addEventListener('input', () => {
+      const label = document.getElementById('prefMaxTagsVal'); if (label) label.textContent = maxTagsEl.value;
+    });
+
+    // P2：初始化子页（仅该页有主容器时生效）
+    initTagsPage();
+    initTagsManagePage();
+
+    const subsPollBtn = document.getElementById('subsTriggerPollBtn');
+    const subsPollHint = document.getElementById('subsPollHint');
+    if (subsPollBtn) subsPollBtn.onclick = async () => {
+      subsPollBtn.disabled = true;
+      try {
+        const rr = await api('POST', '/api/subscriptions/poll');
+        if (!rr.success) throw new Error(rr.message || '失败');
+        subsPollHint.style.display = '';
+        subsPollHint.textContent = `完成：检查 ${rr.checked || 0} 位作者，新增 ${rr.added_new || 0} 条新作（${rr.authors_with_new || 0} 位有更新）。回发现页可查看「订阅新作」。`;
+      } catch (e) {
+        subsPollHint.style.display = '';
+        subsPollHint.textContent = `失败：${e.message || e}`;
+      } finally {
+        subsPollBtn.disabled = false;
+      }
+    };
+
+    // P1-阅读
     const readerToastEl = document.getElementById('readerChapterToast');
     if (readerToastEl) readerToastEl.checked = s.reader_chapter_toast !== '0';
+    const shelfSortEl = document.getElementById('shelfSort');
+    if (shelfSortEl) {
+      const validSorts = ['download_desc','download_asc','read_desc','read_asc','favorite_desc','favorite_asc'];
+      shelfSortEl.value = validSorts.includes(String(s.shelf_sort || '')) ? s.shelf_sort : 'download_desc';
+    }
+  });
+
+  // 设置分组可折叠
+  document.querySelectorAll('.settings-group__head').forEach(h => {
+    h.addEventListener('click', () => {
+      const g = h.dataset.g;
+      const body = document.getElementById(g + 'Body');
+      if (!body) return;
+      const now = body.classList.toggle('open');
+      h.classList.toggle('collapsed', !now);
+    });
   });
 
   // 即时保存：任一设置项变更即写入后端（不再需要「保存设置」按钮）
   async function saveSettings(showToast = true) {
-    let limit = parseInt(document.getElementById('searchResultLimit').value, 10);
-    if (isNaN(limit) || limit < 10) limit = 80;
-    if (limit > 500) limit = 500;
-    document.getElementById('searchResultLimit').value = limit;
-    const hidePC = document.getElementById('hidePageChapter').checked;
-    document.body.classList.toggle('hide-page-chapter', hidePC);
-    const payload = {
-      max_concurrent_downloads: document.getElementById('maxConcurrent').value,
-      image_quality: document.getElementById('imageQuality').value,
-      auto_cleanup_cache: document.getElementById('autoCleanup').checked ? '1' : '0',
-      proxy_enabled: document.getElementById('proxyEnabled').checked ? '1' : '0',
-      proxy_url: document.getElementById('proxyUrl').value.trim(),
-      search_result_limit: String(limit),
-      search_priority: document.getElementById('searchPriority').value || 'input',
-      hide_page_chapter: hidePC ? '1' : '0',
-      show_block_hits: document.getElementById('showBlockHits').checked ? '1' : '0',
-      search_tag_limit: String(parseInt(document.getElementById('searchTagLimit').value, 10) || 0),
-      reader_chapter_toast: document.getElementById('readerChapterToast').checked ? '1' : '0',
-      theme: Theme.get()
-    };
+    const payload = {};
+    const srl = document.getElementById('searchResultLimit');
+    if (srl) {
+      let limit = parseInt(srl.value, 10);
+      if (isNaN(limit) || limit < 10) limit = 80;
+      if (limit > 500) limit = 500;
+      srl.value = limit;
+      payload.search_result_limit = String(limit);
+    }
+    const mc = document.getElementById('maxConcurrent');
+    if (mc) payload.max_concurrent_downloads = mc.value;
+    const iq = document.getElementById('imageQuality');
+    if (iq) payload.image_quality = iq.value;
+    const pe = document.getElementById('proxyEnabled');
+    if (pe) payload.proxy_enabled = pe.checked ? '1' : '0';
+    const pu = document.getElementById('proxyUrl');
+    if (pu) payload.proxy_url = pu.value.trim();
+    const stl = document.getElementById('searchTagLimit');
+    if (stl) payload.search_tag_limit = String(parseInt(stl.value, 10) || 0);
+    const ds = document.getElementById('defaultSort');
+    if (ds) payload.default_sort = ds.value;
+    const sbb = document.getElementById('searchBarBehavior');
+    if (sbb) payload.search_bar_behavior = sbb.value;
+    const hd = document.getElementById('hideDownloadedInSearch');
+    if (hd) payload.hide_downloaded_in_search = hd.value;
+    const hf = document.getElementById('hideFinishedInSearch');
+    if (hf) payload.hide_finished_in_search = hf.value;
+    const sab = document.getElementById('searchApplyBlocks');
+    if (sab) payload.search_apply_blocks = sab.checked ? '1' : '0';
+    const rct = document.getElementById('readerChapterToast');
+    if (rct) payload.reader_chapter_toast = rct.checked ? '1' : '0';
+    const ss = document.getElementById('shelfSort');
+    if (ss) payload.shelf_sort = ss.value;
+    payload.theme = Theme.getPreferred();
+    payload.theme_night_start = Theme._nightStart;
+    payload.theme_night_end = Theme._nightEnd;
+
+    // P2-标签库/智能关联
+    const sa = document.getElementById('smartAssociation');
+    if (sa) payload.smart_association = sa.checked ? '1' : '0';
+    const minHitsEl = document.getElementById('prefMinHits');
+    if (minHitsEl) {
+      let v = parseInt(minHitsEl.value, 10);
+      if (isNaN(v) || v < 2) v = 4;
+      if (v > 20) v = 20;
+      minHitsEl.value = v;
+      payload.pref_min_hits = String(v);
+    }
+    const maxTagsEl = document.getElementById('prefMaxTags');
+    if (maxTagsEl) {
+      let v = parseInt(maxTagsEl.value, 10);
+      if (isNaN(v) || v < 3) v = 25;
+      if (v > 200) v = 200;
+      maxTagsEl.value = v;
+      payload.pref_max_tags = String(v);
+    }
+    const hnStrat = document.getElementById('searchStrategyHn');
+    if (hnStrat) payload.search_strategy = hnStrat.checked ? 'hybrid' : 'hybrid_default';
+    const recStratEl = document.getElementById('recommendStrategy');
+    if (recStratEl) payload.recommend_strategy = recStratEl.checked ? 'hybrid' : 'weighted_only';
+    const hideIrr = document.getElementById('hideIrrelevant');
+    if (hideIrr) payload.hide_irrelevant = hideIrr.checked ? '1' : '0';
+    const activeLibEl = document.getElementById('activeTagLib');
+    if (activeLibEl) payload.active_tag_lib = String(activeLibEl.value || 'interest');
+
+    if (!Object.keys(payload).length) return;
     const r = await api('POST', '/api/settings', payload);
     if (r.success) {
-      setAppConfig('show_block_hits', payload.show_block_hits);
-      setAppConfig('search_tag_limit', payload.search_tag_limit);
+      const allKeys = ['search_tag_limit','default_sort','search_bar_behavior','hide_downloaded_in_search','hide_finished_in_search','search_apply_blocks','reader_chapter_toast','shelf_sort','theme','theme_night_start','theme_night_end','smart_association','pref_min_hits','pref_max_tags','search_strategy','recommend_strategy','hide_irrelevant','active_tag_lib'];
+      for (const k of allKeys) {
+        if (payload[k] != null) setAppConfig(k, payload[k]);
+      }
       if (showToast) toast('设置已保存', 'success');
     } else if (showToast) {
       toast('保存失败', 'error');
@@ -1801,20 +2529,52 @@ function initSettings() {
   };
   bindSave('maxConcurrent', 'change');
   bindSave('imageQuality', 'change');
-  bindSave('autoCleanup', 'change');
   bindSave('proxyEnabled', 'change');
   bindSave('proxyUrl', 'change');
   bindSave('searchResultLimit', 'change');
-  bindSave('searchPriority', 'change');
-  bindSave('hidePageChapter', 'change');
-  bindSave('showBlockHits', 'change');
   bindSave('searchTagLimit', 'change');
   bindSave('readerChapterToast', 'change');
+  bindSave('defaultSort', 'change');
+  bindSave('searchBarBehavior', 'change');
+  bindSave('hideDownloadedInSearch', 'change');
+  bindSave('hideFinishedInSearch', 'change');
+  bindSave('searchApplyBlocks', 'change');
+  bindSave('shelfSort', 'change');
+  bindSave('smartAssociation', 'change');
+  bindSave('prefMinHits', 'change');
+  bindSave('prefMaxTags', 'change');
+  bindSave('searchStrategyHn', 'change');
+  bindSave('searchStrategyHd', 'change');
+  bindSave('recommendStrategy', 'change');
+  bindSave('hideIrrelevant', 'change');
+  bindSave('activeTagLib', 'change');
 
-  // 关于
-  api('GET', '/api/settings').then(r => {});
-  const vEl = document.getElementById('appVersion');
-  if (vEl && vEl.dataset.v) vEl.textContent = vEl.dataset.v;
+  // 关于页：加载版本号与数据占用统计（仅子页存在这些元素时执行）
+  (function initAboutStats() {
+    const vEl = document.getElementById('appVersion');
+    const platfEl = document.getElementById('aboutPlatform');
+    const userDataEl = document.getElementById('aboutUserData');
+    const comicSizeEl = document.getElementById('aboutComicSize');
+    const dbFileEl = document.getElementById('aboutDbFile');
+    const comicsCntEl = document.getElementById('aboutComicsCount');
+    const tagCntEl = document.getElementById('aboutTagCount');
+    const expTagCntEl = document.getElementById('aboutExpTagCount');
+    // 任一关于页统计元素存在 → 调接口
+    const need = vEl || platfEl || userDataEl || comicSizeEl || dbFileEl || comicsCntEl || tagCntEl || expTagCntEl;
+    if (!need) return;
+    api('GET', '/api/about').then(r => {
+      if (!r.success) return;
+      const d = r.data || {};
+      if (vEl) vEl.textContent = d.version || '—';
+      if (platfEl) platfEl.textContent = d.platform || '—';
+      if (userDataEl) userDataEl.textContent = d.user_data || '—';
+      if (comicSizeEl) comicSizeEl.textContent = d.comic_size || '—';
+      if (dbFileEl) dbFileEl.textContent = d.db_file || '—';
+      if (comicsCntEl) comicsCntEl.textContent = `${d.comics_count || 0} 本`;
+      if (tagCntEl) tagCntEl.textContent = d.tag_count || 0;
+      if (expTagCntEl) expTagCntEl.textContent = d.exp_tag_count || 0;
+    });
+  })();
 
   /* ── 屏蔽管理 ── */
   const blockListEl = document.getElementById('blockList');
@@ -1937,41 +2697,6 @@ function initSettings() {
       if (!r.success) { ok = false; toast(r.message || '添加失败', 'error'); }
     }
     if (ok) { toast('已添加', 'success'); document.getElementById('aliasCanon').value = ''; document.getElementById('aliasVariants').value = ''; loadAliases(); }
-  };
-  const aliasSuggestBtn = document.getElementById('aliasSuggestBtn');
-  if (aliasSuggestBtn) aliasSuggestBtn.onclick = async () => {
-    const el = document.getElementById('aliasSuggest');
-    el.className = 'alias-grid';
-    el.style.display = '';
-    el.innerHTML = `<div class="manage-empty">分析中…</div>`;
-    const r = await api('GET', '/api/aliases/suggestions');
-    if (!r.success) { el.innerHTML = `<div class="manage-empty">获取失败</div>`; return; }
-    const rows = r.data || [];
-    if (!rows.length) { el.innerHTML = `<div class="manage-empty">暂无建议（可手动添加）</div>`; return; }
-    el.innerHTML = rows.map((s, i) => {
-      const icon = s.type === 'author' ? 'fa-user-pen' : 'fa-tag';
-      const typeLabel = s.type === 'author' ? '作者' : '标签';
-      const badges = s.aliases.map(a => `<span class="alias-chip">${escapeHtml(a)}</span>`).join('');
-      return `<span class="alias-block" style="flex-wrap:wrap;align-items:center">
-        <i class="fas ${icon}" style="color:var(--accent);width:16px;text-align:center;flex:0 0 auto"></i>
-        <span class="alias-block__type">${typeLabel}</span>
-        <span class="alias-block__name">${escapeHtml(s.canonical)} <span class="alias-block__eq">≈</span> ${badges}</span>
-        <span style="flex-basis:100%;font-size:11px;color:var(--text-3);margin-left:24px;margin-top:-2px">${s.source === 'seed' ? '内置建议' : '本地共现'}${s.score ? ' · 相似度 ' + s.score : ''}</span>
-        <button class="alias-block__add" data-i="${i}" title="采纳" style="margin-left:auto"><i class="fas fa-check"></i></button>
-      </span>`;
-    }).join('');
-    el.querySelectorAll('.alias-block__add').forEach(b => {
-      b.onclick = async () => {
-        const s = rows[parseInt(b.dataset.i)];
-        let ok = true;
-        for (const alias of s.aliases) {
-          const r2 = await api('POST', '/api/aliases', { type: s.type, canonical: s.canonical, alias });
-          if (!r2.success) ok = false;
-        }
-        if (ok) { toast('已采纳同义词', 'success'); loadAliases(); b.closest('.manage-item').remove(); }
-        else toast('部分采纳失败', 'error');
-      };
-    });
   };
   loadAliases();
 
@@ -2265,6 +2990,17 @@ function initReader() {
     toastClosable(msg, 'info', 3000);
   }
 
+  // 读完自动标记：翻越最后一章末尾时置 finished 位（幂等，仅标记一次）
+  let _finishedMarked = false;
+  async function markReadFinishedOnce() {
+    if (_finishedMarked) return;
+    _finishedMarked = true;
+    try {
+      const r = await api('POST', `/api/status/${jmId}/finished`, { finished: true });
+      if (r.success) toast('已标记读完', 'success');
+    } catch (_) { _finishedMarked = false; }
+  }
+
   async function renderPage(i) {
     // 翻到上一章最后一页
     if (i < 0) {
@@ -2281,6 +3017,7 @@ function initReader() {
         if (await loadChapter(currentChapterIndex + 1)) renderPage(0);
       } else {
         showBoundaryToast('已经是最后一章了');
+        markReadFinishedOnce();
       }
       return;
     }
@@ -2610,15 +3347,488 @@ function initDownloads() {
   });
   // 批量下载入口放在下载管理页
   initBatchBar();
+
+  // 暴露 saveSettings 到全局（占位 redirect 会用到）
+  window.__jmRealSaveSettings = saveSettings;
+  window.saveSettings = saveSettings;
+}
+
+function applyAppIcon(key) {
+  // 应用图标：切换侧边栏 logo + 页面 favicon + localStorage（供 base.html 首屏防闪读取）
+  const k = /^[a-z0-9]{1,24}$/.test(String(key || '')) ? key : 'default';
+  const src = '/static/img/icons/' + k + '.png';
+  const img = document.getElementById('appIconImg');
+  if (img && img.getAttribute('src') !== src) img.setAttribute('src', src);
+  const fav = document.getElementById('appFavicon');
+  if (fav && fav.getAttribute('href') !== src) fav.setAttribute('href', src);
+  try { localStorage.setItem('jm_app_icon', k); } catch (_) {}
 }
 
 function applyGlobalSettings() {
   api('GET', '/api/settings').then(r => {
     if (!r.success) return;
     const s = r.data;
-    const hidePC = s.hide_page_chapter === '1' || s.hide_page_chapter === true || s.hide_page_chapter === 'true';
-    document.body.classList.toggle('hide-page-chapter', hidePC);
+    const pref = String(s.theme || "system").toLowerCase();
+    Theme.setPreferred(pref, { start: s.theme_night_start || Theme._nightStart, end: s.theme_night_end || Theme._nightEnd });
+    // 应用图标：后端持久化选择同步到前端展示
+    if (s.app_icon) applyAppIcon(s.app_icon);
+    // 搜索栏行为（search_bar_behavior）即时应用到搜索页 hero：hide → 结果出来滚出视野外时收起 hero 吸附到顶部
+    // （应用在 initSearchPage 读取 appConfigCache 生效）
   });
+  // system 模式下每 60 秒重算一次（跨时间点跨系统主题自动切换）
+  try { clearInterval(window.__jmThemeTicker); } catch (_) {}
+  window.__jmThemeTicker = setInterval(() => { try { Theme.apply(); } catch (_) {} }, 60 * 1000);
+}
+
+/* 在模块顶部预挂一个 saveSettings 占位，避免在 initSettings() 执行到前（applyGlobalSettings 初始化早于 route 判定）跨函数引用 ReferenceError。
+   一旦 initSettings() 执行，会用真实函数覆盖此占位。 */
+if (typeof window.saveSettings !== 'function') {
+  window.saveSettings = async function __jmSaveSettingsPlaceholder() {
+    // 当 saveSettings 真实函数已注入 initSettings() 尾后，这里直接重定向到新引用
+    if (window.__jmRealSaveSettings) return window.__jmRealSaveSettings.apply(null, arguments);
+    // 否则（还没 initSettings）静默：设置值会在进入设置页时 sync 到后端，不应抛 ReferenceError 打断后续逻辑
+    return { ok: false, pending: true };
+  };
+}
+
+/* ── P2：标签库设置页（settings/tags）交互 ─────────── */
+function initTagsPage() {
+  // 仅在标签库主页面执行（至少有一个关键容器）
+  const statsCard = document.getElementById('statsCard');
+  const btnResetInterest = document.getElementById('btnResetInterest');
+  const btnClearInterest = document.getElementById('btnClearInterest');
+  const btnClearExp = document.getElementById('btnClearExp');
+  const btnRefreshStats = document.getElementById('btnRefreshStats');
+  const statsBody = document.getElementById('statsBody');
+  const statsHead = document.querySelector('.stats-card-head');
+  if (!statsCard && !btnResetInterest && !btnClearInterest && !btnClearExp && !btnRefreshStats) return;
+
+  // 1. 汇总统计折叠
+  if (statsHead && statsBody) {
+    try {
+      const wasOpen = localStorage.getItem('jm_stats_open');
+      if (wasOpen === '0') {
+        statsBody.classList.remove('open');
+        statsHead.classList.add('collapsed');
+      }
+    } catch (_) {}
+    statsHead.addEventListener('click', () => {
+      const open = statsBody.classList.toggle('open');
+      statsHead.classList.toggle('collapsed', !open);
+      try { localStorage.setItem('jm_stats_open', open ? '1' : '0'); } catch (_) {}
+    });
+  }
+
+  // 2. 重置样本（兴趣库）
+  if (btnResetInterest) {
+    btnResetInterest.addEventListener('click', async () => {
+      if (!confirm('确认将标签库重置为系统内置默认样本？\n当前累积的兴趣库标签（搜索结果衍生）将被清除，并用默认种子重建。')) return;
+      btnResetInterest.disabled = true;
+      try {
+        const r = await api('POST', '/api/tag-library/reset-interest');
+        if (!r.success) throw new Error(r.message || '重置失败');
+        // 刷新顶栏计数
+        let tagCnt = r.tag_count || r.data && r.data.tag_count;
+        if (tagCnt == null) {
+          try { const s = await api('GET', '/api/settings'); if (s.success && s.data) tagCnt = s.data.tag_count || 0; } catch (_) {}
+        }
+        const cnt = document.getElementById('libTagCount');
+        const cnt2 = document.getElementById('libTagCount2');
+        if (cnt) cnt.textContent = tagCnt != null ? tagCnt : cnt.textContent;
+        if (cnt2) cnt2.textContent = tagCnt != null ? tagCnt : cnt2.textContent;
+        toast(r.message || '已重置为默认样本', 'success');
+      } catch (e) { toast(e.message || e, 'error'); }
+      finally { btnResetInterest.disabled = false; }
+    });
+  }
+
+  // 3. 清空兴趣库
+  if (btnClearInterest) {
+    btnClearInterest.addEventListener('click', async () => {
+      if (!confirm('确认清空「兴趣库」（搜索累积的全部标签）？\n建议在清空后使用「重置为默认样本」做基础初始化，以免影响智能关联。')) return;
+      btnClearInterest.disabled = true;
+      try {
+        const r = await api('POST', '/api/tag-library/clear', { library: 'interest' });
+        if (!r.success) throw new Error(r.message || '清空失败');
+        let tagCnt = r.tag_count ?? (r.data && r.data.tag_count);
+        if (tagCnt == null) {
+          try { const s = await api('GET', '/api/settings'); if (s.success && s.data) tagCnt = s.data.tag_count || 0; } catch (_) {}
+        }
+        const cnt = document.getElementById('libTagCount');
+        const cnt2 = document.getElementById('libTagCount2');
+        if (cnt) cnt.textContent = tagCnt != null ? tagCnt : 0;
+        if (cnt2) cnt2.textContent = tagCnt != null ? tagCnt : 0;
+        toast(r.message || '兴趣库已清空', 'success');
+      } catch (e) { toast(e.message || e, 'error'); }
+      finally { btnClearInterest.disabled = false; }
+    });
+  }
+
+  // 4. 清空实验库
+  if (btnClearExp) {
+    btnClearExp.addEventListener('click', async () => {
+      if (!confirm('确认清空「实验库」（JM 号标签全量字典）？\n此库只在切换到「实验库」时才会使用，清空后下次切换会显示 0 条，可重新导入。')) return;
+      btnClearExp.disabled = true;
+      try {
+        const r = await api('POST', '/api/tag-library/clear', { library: 'experimental' });
+        if (!r.success) throw new Error(r.message || '清空失败');
+        let expCnt = r.exp_tag_count ?? (r.data && r.data.exp_tag_count);
+        if (expCnt == null) {
+          try { const s = await api('GET', '/api/settings'); if (s.success && s.data) expCnt = s.data.exp_tag_count || 0; } catch (_) {}
+        }
+        const cnt = document.getElementById('libExpTagCount');
+        const cnt2 = document.getElementById('libExpTagCount2');
+        if (cnt) cnt.textContent = expCnt != null ? expCnt : 0;
+        if (cnt2) cnt2.textContent = expCnt != null ? expCnt : 0;
+        toast(r.message || '实验库已清空', 'success');
+      } catch (e) { toast(e.message || e, 'error'); }
+      finally { btnClearExp.disabled = false; }
+    });
+  }
+
+  // 5. 加载/刷新汇总统计
+  async function loadStats() {
+    if (!statsBody) return;
+    statsBody.querySelectorAll('[data-chips]').forEach(c => c.innerHTML = '<span class="muted">加载中…</span>');
+    const favoCntEl = document.getElementById('statsFavCount');
+    const hateCntEl = document.getElementById('statsHateCount');
+    if (favoCntEl) favoCntEl.textContent = '…';
+    if (hateCntEl) hateCntEl.textContent = '…';
+    const r = await api('GET', '/api/tag-stats');
+    if (!r.success) {
+      statsBody.innerHTML = `<div class="muted" style="padding:12px;text-align:center;">加载失败：${escapeHtml(r.message || '')}</div>`;
+      return;
+    }
+    const d = r.data || {};
+    if (favoCntEl) favoCntEl.textContent = `${d.favorite_total || 0} 本`;
+    if (hateCntEl) hateCntEl.textContent = `${d.blocked_total || 0} 本`;
+    const make = (arr, state) => {
+      if (!arr || !arr.length) return '<span class="muted">—— 暂无数据 ——</span>';
+      return arr.map(item => {
+        const cls = state === 'like' ? 'tag-chip tag-chip--like'
+                 : state === 'hate' ? 'tag-chip tag-chip--hate'
+                 : 'tag-chip tag-chip--irrel';
+        const c = `<span class="tag-chip__count">${item.count}</span>`;
+        return `<button class="${cls}" data-cycle="${encodeURIComponent(item.tag)}">${escapeHtml(item.tag)}${c}</button>`;
+      }).join('');
+    };
+    const favChips = document.getElementById('favLikedChips');
+    if (favChips) favChips.innerHTML = make(d.favorite_liked, 'like');
+    const favHChips = document.getElementById('favHatedChips');
+    if (favHChips) favHChips.innerHTML = make(d.favorite_hated, 'hate');
+    const hateLChips = document.getElementById('hateLikedChips');
+    if (hateLChips) hateLChips.innerHTML = make(d.blocked_liked, 'like');
+    const hateHChips = document.getElementById('hateHatedChips');
+    if (hateHChips) hateHChips.innerHTML = make(d.blocked_hated, 'hate');
+    // cycle 按钮绑定（三态切换）
+    statsBody.querySelectorAll('[data-cycle]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const tag = decodeURIComponent(btn.dataset.cycle);
+        btn.classList.add('is-locked');
+        try {
+          const r = await api('POST', '/api/tag-opinions/cycle', { tag });
+          if (!r.success) throw new Error(r.message || '切换失败');
+          // 刷新整组统计以保证颜色与 count 分组一致
+          loadStats();
+        } catch (e) { toast(e.message || e, 'error'); btn.classList.remove('is-locked'); }
+      });
+    });
+  }
+  if (btnRefreshStats) btnRefreshStats.addEventListener('click', loadStats);
+  if (statsBody) loadStats();
+}
+
+/* ── P2：标签库管理页（settings/tags-manage）交互 ──── */
+function initTagsManagePage() {
+  const host = document.getElementById('tagsManageHost');
+  if (!host) return;
+
+  const debounce = (fn, delay = 220) => {
+    let t; return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), delay); };
+  };
+  const parseCsvSet = (s) => {
+    if (!s) return new Set();
+    return new Set(String(s).split(',').map(x => x.trim().toLowerCase()).filter(Boolean));
+  };
+  const chipClassFor = (tag, likeSet, hateSet, ignoreSet) => {
+    const t = String(tag).trim().toLowerCase();
+    if (likeSet.has(t)) return 'tag-chip tag-chip--like';
+    if (hateSet.has(t)) return 'tag-chip tag-chip--hate';
+    if (ignoreSet.has(t)) return 'tag-chip tag-chip--irrel';
+    return 'tag-chip';
+  };
+  const stateIcon = (tag, likeSet, hateSet, ignoreSet) => {
+    const t = String(tag).trim().toLowerCase();
+    if (likeSet.has(t)) return '<i class="fas fa-heart" style="font-size:10px;"></i>';
+    if (hateSet.has(t)) return '<i class="fas fa-ban" style="font-size:10px;"></i>';
+    if (ignoreSet.has(t)) return '<i class="fas fa-eye-slash" style="font-size:10px;"></i>';
+    return '';
+  };
+
+  // 本地状态
+  let state = {
+    library: 'interest',
+    mode: 'all',
+    search: '',
+    page: 1,
+    pageSize: 200,
+    total: 0,
+    likeSet: new Set(),
+    hateSet: new Set(),
+    ignoreSet: new Set()
+  };
+
+  // —— DOM 引用 ——
+  const segInterest = document.getElementById('segInterest');
+  const segExp = document.getElementById('segExp');
+  const cntLibTag = document.getElementById('libTagCountManage');
+  const cntExpTag = document.getElementById('libExpTagCountManage');
+  const hideIrrEl = document.getElementById('hideIrrelevantManage');
+  const tabsWrap = document.getElementById('filterTabsManage');
+  const searchInput = document.getElementById('searchTagManage');
+  const emptyWrap = document.getElementById('emptyManage');
+  const grid = document.getElementById('gridManage');
+  const pageInfoEl = document.getElementById('pageInfoManage');
+  const moreBtn = document.getElementById('moreBtnManage');
+  const addInput = document.getElementById('addTagInput');
+  const addLikeBtn = document.getElementById('addLikeBtn');
+  const addHateBtn = document.getElementById('addHateBtn');
+  const addIrrelBtn = document.getElementById('addIrrelBtn');
+  const addLibBtn = document.getElementById('addLibBtn');
+
+  // —— 初始加载 opinions + 首屏 ——
+  async function loadOpinions() {
+    const r = await api('GET', '/api/tag-opinions');
+    if (r.success) {
+      const d = r.data || {};
+      state.likeSet = parseCsvSet(d.manual_csv || '');
+      state.hateSet = parseCsvSet(d.hated_csv || '');
+      state.ignoreSet = parseCsvSet((d.ignored_csv || '') + ',' + (d.user_ignored_csv || ''));
+      updateTabBadges();
+    }
+  }
+
+  function updateTabBadges() {
+    // 实际 badge 数字在 query 响应里（后端会带），这里仅做 UI 状态
+    const like = document.getElementById('badgeLike');
+    const hate = document.getElementById('badgeHate');
+    const irrel = document.getElementById('badgeIrrel');
+    const all = document.getElementById('badgeAll');
+    // 已在模板里预设为 0；真实数据在 loadList 的 total_by_mode 里覆盖
+    if (like) like.textContent = state.likeSet.size;
+    if (hate) hate.textContent = state.hateSet.size;
+    if (irrel) irrel.textContent = state.ignoreSet.size;
+    if (all) all.textContent = state.total || 0;
+  }
+
+  function setMode(newMode) {
+    state.mode = newMode;
+    state.page = 1;
+    tabsWrap.querySelectorAll('.filter-tab').forEach(t => {
+      t.classList.toggle('on', (t.dataset.mode || '') === newMode);
+    });
+    loadList();
+  }
+  function setLibrary(newLib) {
+    state.library = newLib;
+    state.page = 1;
+    [segInterest, segExp].forEach(seg => {
+      if (!seg) return;
+      seg.classList.toggle('on', seg.dataset.lib === newLib);
+    });
+    // 即时保存到 active_tag_lib（可能 initSettings() 没跑，先取 window 上暴露的版本）
+    const _save = typeof window.saveSettings === 'function' ? window.saveSettings : (typeof saveSettings === 'function' ? saveSettings : null);
+    if (_save) _save(false);
+    loadList();
+  }
+
+  async function loadList() {
+    emptyWrap.style.display = 'none';
+    if (grid) grid.innerHTML = '<span class="muted">加载中…</span>';
+    if (moreBtn) moreBtn.style.display = 'none';
+    if (pageInfoEl) pageInfoEl.textContent = '';
+
+    const payload = {
+      library: state.library,
+      mode: state.mode,
+      search: String(state.search || '').trim(),
+      page: state.page,
+      page_size: state.pageSize,
+      hide_irrelevant: hideIrrEl ? hideIrrEl.checked : true
+    };
+    const r = await api('POST', '/api/tag-library/manage', payload);
+    if (!r.success) {
+      if (grid) grid.innerHTML = `<span class="muted">加载失败：${escapeHtml(r.message || '')}</span>`;
+      return;
+    }
+    const d = r.data || {};
+    state.total = d.total || 0;
+    // 更新 segmented 计数
+    if (cntLibTag) cntLibTag.textContent = d.tag_count ?? state.library === 'interest' ? state.total : (d.tag_count ?? 0);
+    if (cntExpTag) cntExpTag.textContent = d.exp_tag_count ?? state.library === 'experimental' ? state.total : (d.exp_tag_count ?? 0);
+    // tab badge（使用后端给出的 total_by_mode 更准确）
+    const byMode = d.total_by_mode || {};
+    const badgeAll = document.getElementById('badgeAll');
+    if (badgeAll) badgeAll.textContent = (state.total != null) ? state.total : (byMode.all || 0);
+    const likeB = document.getElementById('badgeLike');
+    if (likeB) likeB.textContent = byMode.like != null ? byMode.like : state.likeSet.size;
+    const hateB = document.getElementById('badgeHate');
+    if (hateB) hateB.textContent = byMode.hate != null ? byMode.hate : state.hateSet.size;
+    const irrelB = document.getElementById('badgeIrrel');
+    if (irrelB) irrelB.textContent = byMode.irrelevant != null ? byMode.irrelevant : state.ignoreSet.size;
+
+    const items = d.items || [];
+    const start = (state.page - 1) * state.pageSize + 1;
+    const end = Math.min(state.page * state.pageSize, state.total);
+
+    if (!items.length) {
+      if (grid) grid.innerHTML = '';
+      emptyWrap.style.display = '';
+      const tEl = emptyWrap.querySelector('.empty-state__title');
+      const dEl = emptyWrap.querySelector('.empty-state__desc');
+      if (state.search) {
+        if (tEl) tEl.textContent = '找不到匹配的标签';
+        if (dEl) dEl.textContent = `试试换个关键词，或在下方手动添加「${escapeHtml(state.search)}」到喜欢/讨厌/无关/当前库。`;
+      } else if (state.mode !== 'all') {
+        if (tEl) tEl.textContent = '当前视图暂无标签';
+        if (dEl) dEl.textContent = '切到「全部」查看完整标签库，或使用手动添加按钮录入。';
+      } else {
+        if (tEl) tEl.textContent = (state.library === 'experimental' ? '实验库尚未启用' : '标签库是空的');
+        if (dEl) dEl.textContent = (state.library === 'experimental'
+          ? '实验库需要把 JM 号对应到的标签全量写入字典。目前为空时，可以回到「标签库」页导入，或手动在下方添加。'
+          : '在搜索页搜索几个关键词就会自动累积到兴趣库；也可以用下方手动添加。');
+      }
+      if (pageInfoEl) pageInfoEl.textContent = `共 ${state.total} 条`;
+      return;
+    }
+
+    // HTML: 第一页直接覆盖，后续 append
+    const html = items.map(t => {
+      const tag = (typeof t === 'string') ? t : (t.tag || t.name || '');
+      const count = (typeof t === 'object' && t.count != null) ? Number(t.count) : 0;
+      const cls = chipClassFor(tag, state.likeSet, state.hateSet, state.ignoreSet);
+      const countEl = (count > 0) ? `<span class="tag-chip__count">${count}</span>` : '';
+      const icon = stateIcon(tag, state.likeSet, state.hateSet, state.ignoreSet);
+      return `<button class="${cls}" data-tag="${encodeURIComponent(tag)}">${icon}<span>${escapeHtml(tag)}</span>${countEl}</button>`;
+    }).join('');
+    if (state.page === 1) grid.innerHTML = html; else grid.insertAdjacentHTML('beforeend', html);
+
+    // 绑定 chip 点击：三态 cycle
+    grid.querySelectorAll('button.tag-chip[data-tag]').forEach(btn => {
+      if (btn.dataset.bindCycleDone) return;
+      btn.dataset.bindCycleDone = '1';
+      btn.addEventListener('click', async () => {
+        const tag = decodeURIComponent(btn.dataset.tag);
+        btn.classList.add('is-locked');
+        try {
+          const r = await api('POST', '/api/tag-opinions/cycle', { tag });
+          if (!r.success) throw new Error(r.message || '切换失败');
+          // 更新本地集合
+          const ns = r.new_state;
+          const t = tag.trim().toLowerCase();
+          [state.likeSet, state.hateSet, state.ignoreSet].forEach(s => s.delete(t));
+          if (ns === 'like') state.likeSet.add(t);
+          else if (ns === 'hate') state.hateSet.add(t);
+          else if (ns === 'irrelevant') state.ignoreSet.add(t);
+          // 重新渲染该 chip 的样式（用新属性刷新 DOM，不做全量 reload 避免分页抖）
+          btn.outerHTML = (() => {
+            // 重算 count 文本保留
+            const countEl = count > 0 ? `<span class="tag-chip__count">${btn.querySelector('.tag-chip__count')?.textContent || ''}</span>` : '';
+            const cls = chipClassFor(t, state.likeSet, state.hateSet, state.ignoreSet);
+            const ic = stateIcon(t, state.likeSet, state.hateSet, state.ignoreSet);
+            return `<button class="${cls}" data-tag="${encodeURIComponent(t)}" data-bind-cycle-done="1">${ic}<span>${escapeHtml(t)}</span>${countEl}</button>`;
+          })();
+          // 重新绑定（outerHTML 替换后需要重新挂一次下一次点击）
+          const fresh = grid.querySelector(`button.tag-chip[data-tag="${encodeURIComponent(t)}"]:not([data-bind-cycle-done="1"])`);
+          // 由于上面已经写了 data-bind-cycle-done=1 新生成 btn 就不再重入了；
+          // 更简单：改为走事件委托的方式亦可，这里直接 rebind 一次（替换一次后 rebind）：
+          // 放弃事件委托复杂度，刷新整页模式分布数字：
+          updateTabBadges();
+        } catch (e) { toast(e.message || e, 'error'); btn.classList.remove('is-locked'); }
+      });
+    });
+
+    // 分页信息 / 更多按钮
+    if (pageInfoEl) pageInfoEl.textContent = `第 ${start} - ${end} 条 / 共 ${state.total} 条`;
+    if (moreBtn) {
+      moreBtn.style.display = (end < state.total) ? '' : 'none';
+    }
+  }
+
+  // —— 事件：数据源 segmented ——
+  if (segInterest) segInterest.addEventListener('click', () => setLibrary('interest'));
+  if (segExp) segExp.addEventListener('click', () => setLibrary('experimental'));
+
+  // —— 事件：filter tabs（事件委托） ——
+  if (tabsWrap) {
+    tabsWrap.addEventListener('click', (e) => {
+      const t = e.target.closest('.filter-tab');
+      if (!t) return;
+      setMode(t.dataset.mode || 'all');
+    });
+  }
+
+  // —— 事件：搜索 debounce ——
+  if (searchInput) {
+    searchInput.addEventListener('input', debounce(() => {
+      state.search = searchInput.value || '';
+      state.page = 1;
+      loadList();
+    }, 220));
+  }
+
+  // —— 事件：无关开关即时 + save ——
+  if (hideIrrEl) {
+    hideIrrEl.addEventListener('change', () => {
+      // 同步到 settings 页主开关
+      const master = document.getElementById('hideIrrelevant');
+      if (master) master.checked = hideIrrEl.checked;
+      state.page = 1;
+      loadList();
+      saveSettings(false);
+    });
+  }
+
+  // —— 事件：显示更多 ——
+  if (moreBtn) moreBtn.addEventListener('click', () => {
+    state.page += 1;
+    loadList();
+  });
+
+  // —— 事件：手动添加 4 个按钮 ——
+  async function addWithOp(op) {
+    const raw = (addInput ? addInput.value || '' : '').trim();
+    if (!raw) { toast('请先输入要添加的标签', 'warn'); return; }
+    const payload = { tags: raw, op };
+    if (op === 'add_to_library') payload.library = state.library;
+    const r = await api('POST', '/api/tag-opinions/bulk', payload);
+    if (!r.success) { toast(r.message || '操作失败', 'error'); return; }
+    toast(r.message || '已添加', 'success');
+    // 清空输入并同步本地 sets 与顶栏计数
+    if (addInput) addInput.value = '';
+    await loadOpinions();
+    // 数据源计数更新：如果是 add_to_library，后端 message/top 里不一定带新值
+    // 重新拉取 /api/settings 里的 tag_count/exp_tag_count：
+    try {
+      const set = await api('GET', '/api/settings');
+      if (set.success && set.data) {
+        if (cntLibTag) cntLibTag.textContent = set.data.tag_count || 0;
+        if (cntExpTag) cntExpTag.textContent = set.data.exp_tag_count || 0;
+      }
+    } catch (_) {}
+    state.page = 1;
+    loadList();
+  }
+  if (addLikeBtn) addLikeBtn.addEventListener('click', () => addWithOp('like'));
+  if (addHateBtn) addHateBtn.addEventListener('click', () => addWithOp('hate'));
+  if (addIrrelBtn) addIrrelBtn.addEventListener('click', () => addWithOp('ignore'));
+  if (addLibBtn) addLibBtn.addEventListener('click', () => addWithOp('add_to_library'));
+
+  // —— 启动：先 load opinions（知道每个标签的 4 态归属），再拉首屏列表 ——
+  (async () => {
+    await loadOpinions();
+    loadList();
+  })();
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -2633,59 +3843,282 @@ document.addEventListener('DOMContentLoaded', () => {
   setupNav();
   attachRipple();
 
+  // 回收站：启动时静默扫一次到期项（对齐 Android App 启动 checkRecycleExpiry）
+  api('POST', '/api/recycle/scan').then(r => {
+    if (r && r.success && r.count > 0) toast(`回收站：${r.count} 本已到期，本地图片已清理`, 'info');
+  }).catch(() => {});
+
+  // 书架右上角回收站入口 + 角标
+  const rcEntry = document.getElementById('recycleEntry');
+  if (rcEntry) {
+    rcEntry.onclick = () => { location.href = '/recycle'; };
+    api('GET', '/api/recycle').then(r => {
+      const badge = document.getElementById('recycleBadge');
+      if (!badge || !r || !r.success) return;
+      const n = r.data.items.length;
+      if (n > 0) { badge.textContent = n; badge.style.display = 'inline-block'; }
+    }).catch(() => {});
+  }
+
   const p = location.pathname;
-  if (p.startsWith('/downloads')) initDownloads();
+  if (p.startsWith('/detail/')) initDetail();
+  else if (p.startsWith('/recycle')) initRecycle();
+  else if (p.startsWith('/downloads')) initDownloads();
   else if (p.startsWith('/reader/')) initReader();
   else if (p.startsWith('/library')) initLibrary();
   else if (p.startsWith('/settings')) initSettings();
-  else if (p.startsWith('/home')) initHome();
-  else initSearch();
-
-  // 全局可拖动返回键
-  const globalBack = document.getElementById('globalBack');
-  if (globalBack) {
-    // 阅读器页面已有独立返回键，全局返回键隐藏避免重复
-    if (p.startsWith('/reader/')) { globalBack.style.display = 'none'; }
-    else {
-      try {
-        const pos = JSON.parse(localStorage.getItem('jm_global_back_pos') || '{}');
-        if (pos.x != null) { globalBack.style.left = pos.x + 'px'; globalBack.style.top = pos.y + 'px'; }
-      } catch (_) {}
-      let dragging = false, ox = 0, oy = 0;
-      globalBack.addEventListener('pointerdown', e => {
-        if (e.button !== 0) return;
-        dragging = true;
-        globalBack.classList.add('dragging');
-        const r = globalBack.getBoundingClientRect();
-        ox = e.clientX - r.left; oy = e.clientY - r.top;
-        globalBack.setPointerCapture(e.pointerId);
-      });
-      globalBack.addEventListener('pointermove', e => {
-        if (!dragging) return;
-        e.preventDefault();
-        const x = Math.max(0, Math.min(window.innerWidth - 38, e.clientX - ox));
-        const y = Math.max(0, Math.min(window.innerHeight - 38, e.clientY - oy));
-        globalBack.style.left = x + 'px'; globalBack.style.top = y + 'px';
-      });
-      const endDrag = (e) => {
-        if (!dragging) return;
-        dragging = false;
-        globalBack.classList.remove('dragging');
-        try {
-          const r = globalBack.getBoundingClientRect();
-          localStorage.setItem('jm_global_back_pos', JSON.stringify({ x: r.left, y: r.top }));
-        } catch (_) {}
-        if (e.type === 'pointerup') {
-          // 真正点击（没拖动或拖动很小）→ 返回
-          const r = globalBack.getBoundingClientRect();
-          const dx = e.clientX - r.left - ox, dy = e.clientY - r.top - oy;
-          if (Math.abs(dx) < 4 && Math.abs(dy) < 4) {
-            if (history.length > 1) history.back(); else location.href = '/search';
-          }
-        }
-      };
-      globalBack.addEventListener('pointerup', endDrag);
-      globalBack.addEventListener('pointercancel', endDrag);
-    }
-  }
+  else initSearch();   // /search（含 /home 302 过来的）
 });
+
+/* ═══ 回收站（v2.9.0，对齐 Android RecycleScreen / RecycleManager）═══
+   两态：
+     宽限中 → 本地图片还在，可直接阅读，剩 N 天；再读一次自动续期
+     已删本地 → 只剩封面与记录，重新下载即可拾回
+   ─────────────────────────────────────────────────────────── */
+async function initRecycle() {
+  const list = document.getElementById('rcList');
+  const countEl = document.getElementById('rcCount');
+  if (!list) return;
+
+  function rowHtml(it) {
+    const tag = it.trashed
+      ? '<span class="rc-tag gone">本地已删 · 需重新下载</span>'
+      : `<span class="rc-tag grace">还剩 ${it.remain_days} 天</span>`;
+    const cover = it.cover_api
+      ? `<img class="rc-cover" src="${it.cover_api}" alt="" loading="lazy"
+              onerror="this.style.visibility='hidden'">`
+      : '<div class="rc-cover"></div>';
+    const primary = it.trashed
+      ? '<button class="d-back" data-act="redl" style="padding:5px 12px;font-size:12px;height:32px"><i class="fas fa-download"></i> 重新下载</button>'
+      : '<button class="d-back" data-act="read" style="padding:5px 12px;font-size:12px;height:32px"><i class="fas fa-book-open"></i> 阅读</button>';
+    return `<div class="rc-row ${it.trashed ? 'is-trashed' : ''}" data-id="${it.jm_id}">
+      ${cover}
+      <div class="rc-main">
+        <div class="rc-title">${escapeHtml(it.title)}</div>
+        <div class="rc-sub">${tag}${it.author ? ' · ' + escapeHtml(it.author) : ''} · JM-${it.jm_id}</div>
+      </div>
+      <div class="rc-acts">
+        ${primary}
+        <button class="d-back" data-act="restore" style="padding:5px 12px;font-size:12px;height:32px"
+                title="宽限中的：取消宽限回到书架 / 已删本地的：提示重新下载"><i class="fas fa-rotate-left"></i> 恢复</button>
+        <button class="d-back" data-act="del" style="padding:5px 12px;font-size:12px;height:32px"
+                title="记录 + 本地文件一并删除，不可恢复"><i class="fas fa-trash"></i> 彻底删除</button>
+      </div>
+    </div>`;
+  }
+
+  function bindRows() {
+    list.querySelectorAll('.rc-row').forEach(row => {
+      const id = row.dataset.id;
+      const on = (name, fn) => { const b = row.querySelector(`[data-act="${name}"]`); if (b) b.onclick = fn; };
+      on('read', () => { location.href = '/reader/' + id; });
+      on('redl', async () => {
+        const r = await api('POST', `/api/download/${id}`);
+        toast(r && r.success ? '已加入下载队列，完成后自动拾回' : ((r && r.message) || '下载失败'),
+              r && r.success ? 'success' : 'error');
+      });
+      on('restore', async () => {
+        const r = await api('POST', `/api/recycle/${id}/restore`);
+        if (!r || !r.success) { toast((r && r.message) || '恢复失败', 'error'); return; }
+        if (r.need_download) { toast(r.message, 'info'); return; }
+        toast(r.message || '已恢复到书架', 'success');
+        row.remove();
+      });
+      on('del', async () => {
+        if (!confirm('彻底删除：记录与本地文件都会消失，无法恢复。确定继续？')) return;
+        const r = await api('DELETE', `/api/recycle/${id}`);
+        if (r && r.success) { toast('已彻底删除', 'success'); row.remove(); }
+        else toast((r && r.message) || '删除失败', 'error');
+      });
+    });
+  }
+
+  async function load() {
+    const r = await api('GET', '/api/recycle');
+    if (!r || !r.success) {
+      list.innerHTML = `<div class="rc-empty">加载失败：${escapeHtml((r && r.message) || '未知错误')}</div>`;
+      return;
+    }
+    const items = r.data.items || [];
+    if (countEl) {
+      countEl.textContent = items.length
+        ? `宽限中 ${r.data.pending} 本 · 已删本地 ${r.data.trashed} 本` : '';
+    }
+    if (!items.length) {
+      list.innerHTML = '<div class="rc-empty"><i class="fas fa-box-open" style="font-size:22px;display:block;margin-bottom:8px"></i>回收站是空的</div>';
+      return;
+    }
+    list.innerHTML = items.map(rowHtml).join('');
+    bindRows();
+  }
+
+  const scanBtn = document.getElementById('rcScanBtn');
+  if (scanBtn) scanBtn.onclick = async () => {
+    const r = await api('POST', '/api/recycle/scan');
+    if (r && r.success) {
+      toast(r.count ? `已清理 ${r.count} 本到期的本地内容` : '没有需要清理的条目', 'success');
+      load();
+    } else toast((r && r.message) || '扫描失败', 'error');
+  };
+  const clearBtn = document.getElementById('rcClearBtn');
+  if (clearBtn) clearBtn.onclick = async () => {
+    if (!confirm('清空回收站：所有「已删本地」的记录会被彻底删除（不可恢复）。宽限中的条目不受影响。继续？')) return;
+    const r = await api('POST', '/api/recycle/clear');
+    if (r && r.success) { toast(`已清空 ${r.deleted} 条`, 'success'); load(); }
+    else toast((r && r.message) || '清空失败', 'error');
+  };
+  const backBtn = document.getElementById('rcBackBtn');
+  if (backBtn) backBtn.onclick = () => { location.href = '/library'; };
+
+  // 进入回收站页也扫一次到期项，再拉列表（对齐 Android 进入回收站即扫描）
+  await api('POST', '/api/recycle/scan').catch(() => {});
+  await load();
+}
+
+/* ═══ 漫画详情页（v2.10.0，对齐 Android DetailScreen）═════════════
+   入口：搜索卡片 / 书架卡片点击 → /detail/<jm_id>
+   数据：GET /api/detail/<jm_id>（本地元数据优先，缺字段回落在线详情）
+   ─────────────────────────────────────────────────────────── */
+
+function _dtFmtBytes(n) {
+  if (!n) return '—';
+  if (n < 1024) return n + ' B';
+  if (n < 1048576) return (n / 1024).toFixed(0) + ' KB';
+  if (n < 1073741824) return (n / 1048576).toFixed(1) + ' MB';
+  return (n / 1073741824).toFixed(2) + ' GB';
+}
+
+async function initDetail() {
+  const root = document.getElementById('dtRoot');
+  if (!root) return;
+  const jmId = root.dataset.jm;
+  const jmEl = document.getElementById('dtJmId');
+  if (jmEl) jmEl.textContent = 'JM-' + jmId;
+
+  const backBtn = document.getElementById('dtBack');
+  if (backBtn) backBtn.onclick = () => {
+    if (history.length > 1) history.back(); else location.href = '/library';
+  };
+
+  // 事件委托：标签 → 标签搜索，作者 → 作者搜索，封面 → 新窗口看大图
+  root.onclick = (e) => {
+    const tagEl = e.target.closest('.dt-tag');
+    if (tagEl) { location.href = '/search?tag=' + encodeURIComponent(tagEl.dataset.tag); return; }
+    const auEl = e.target.closest('.dt-author b');
+    if (auEl) { location.href = '/search?author=' + encodeURIComponent(auEl.dataset.author); return; }
+    const cvEl = e.target.closest('.dt-cover');
+    if (cvEl && cvEl.src) window.open(cvEl.src, '_blank');
+  };
+
+  const r = await api('GET', '/api/detail/' + jmId);
+  if (!r || !r.success) {
+    root.innerHTML = `<div class="dt-err"><i class="fas fa-triangle-exclamation" style="font-size:22px;display:block;margin-bottom:8px"></i>${escapeHtml((r && r.message) || '加载失败')}</div>`;
+    return;
+  }
+  root.innerHTML = _dtHtml(r.data);
+  _dtBind(r.data);
+  api('POST', `/api/status/${jmId}/view`).catch(() => {});   // 查看次数 +1
+}
+
+function _dtHtml(d) {
+  const st = d.status || {}, rc = d.recycle || {}, pg = d.progress || {};
+
+  const badges = [];
+  if (st.favorite) badges.push('<span class="dt-badge warn"><i class="fas fa-star"></i> 已收藏</span>');
+  if (d.has_local) badges.push('<span class="dt-badge ok"><i class="fas fa-check"></i> 已下载</span>');
+  if (st.finished) badges.push('<span class="dt-badge ok"><i class="fas fa-circle-check"></i> 已读完</span>');
+  if (rc.trashed) badges.push('<span class="dt-badge bad"><i class="fas fa-trash-can"></i> 本地已删 · 需重新下载</span>');
+  else if (rc.recycle_at > 0) badges.push(`<span class="dt-badge warn"><i class="fas fa-hourglass-half"></i> 回收站中 · 还剩 ${rc.remain_days} 天</span>`);
+  if (st.blocked) badges.push('<span class="dt-badge bad"><i class="fas fa-ban"></i> 已拉黑作品</span>');
+
+  const acts = [];
+  if (d.has_local) acts.push('<button class="dt-btn primary" data-act="read"><i class="fas fa-book-open"></i> 阅读</button>');
+  else acts.push('<button class="dt-btn primary" data-act="dl"><i class="fas fa-download"></i> 下载到书架</button>');
+  acts.push(`<button class="dt-btn${st.favorite ? ' primary' : ''}" data-act="fav"><i class="fas fa-star"></i> ${st.favorite ? '取消收藏' : '收藏'}</button>`);
+  if (d.has_local) {
+    acts.push('<button class="dt-btn" data-act="move"><i class="fas fa-folder-plus"></i> 分类</button>');
+    acts.push('<button class="dt-btn danger" data-act="del"><i class="fas fa-trash-can"></i> 移入回收站</button>');
+  }
+  acts.push('<button class="dt-btn danger" data-act="block-author"><i class="fas fa-user-slash"></i> 拉黑作者</button>');
+  acts.push('<button class="dt-btn danger" data-act="block-work"><i class="fas fa-ban"></i> 拉黑作品</button>');
+
+  const meta = [`<span>页数 <b>${d.pages || '—'}</b></span>`,
+                `<span>章节 <b>${d.chapter_count || '—'}</b></span>`];
+  if (d.file_size) meta.push(`<span>占用 <b>${_dtFmtBytes(d.file_size)}</b></span>`);
+  if (d.favorites) meta.push(`<span>在线收藏 <b>${d.favorites}</b></span>`);
+  meta.push(`<span>JM号 <b>${d.jm_id}</b></span>`);
+
+  const chapHtml = (d.chapters && d.chapters.length)
+    ? d.chapters.map((c, i) => `<div class="dt-ch">
+        <span class="dt-ch__no">${i + 1}</span>
+        <span class="dt-ch__name">${escapeHtml(c.name || '未命名章节')}</span>
+        <span class="dt-ch__pages">${c.pages || 0} 页</span>
+      </div>`).join('')
+    : '<div class="dt-empty">没有本地章节文件（未下载，或已移入回收站）</div>';
+
+  const tagsHtml = (d.tags && d.tags.length)
+    ? d.tags.map(t => `<span class="dt-tag" data-tag="${escapeHtml(t)}">${escapeHtml(t)}</span>`).join('')
+    : '<span class="dt-empty">没有标签信息</span>';
+
+  const progHtml = (d.has_local && pg.pages)
+    ? `<div class="dt-progress">
+         <div class="dt-progress__t">阅读进度：第 ${pg.page || 0} / ${pg.pages} 页（${pg.percent || 0}%）</div>
+         <div class="dt-bar"><i style="width:${pg.percent || 0}%"></i></div>
+       </div>` : '';
+
+  const catsHtml = (d.categories && d.categories.length)
+    ? `<div class="dt-sec"><div class="dt-sec__t"><i class="fas fa-folder-tree" style="color:var(--accent);margin-right:6px"></i>分类</div>
+         <div class="dt-tags">${d.categories.map(c => `<span class="dt-tag">${escapeHtml(c.name)}</span>`).join('')}</div></div>`
+    : '';
+
+  return `
+    <div class="dt-hero">
+      <img class="dt-cover" src="${d.cover_api}" alt="" onerror="this.style.visibility='hidden'">
+      <div class="dt-main">
+        <div class="dt-title">${escapeHtml(d.title)}</div>
+        ${d.author ? `<div class="dt-author">作者：<b data-author="${escapeHtml(d.author)}">${escapeHtml(d.author)}</b></div>` : ''}
+        <div class="dt-badges">${badges.join('') || '<span class="dt-badge">未下载</span>'}</div>
+        ${progHtml}
+        <div class="dt-meta">${meta.join('')}</div>
+        <div class="dt-acts">${acts.join('')}</div>
+      </div>
+    </div>
+    <div class="dt-sec"><div class="dt-sec__t"><i class="fas fa-tags" style="color:var(--accent);margin-right:6px"></i>标签</div>
+      <div class="dt-tags">${tagsHtml}</div></div>
+    ${catsHtml}
+    ${d.description ? `<div class="dt-sec"><div class="dt-sec__t"><i class="fas fa-align-left" style="color:var(--accent);margin-right:6px"></i>简介</div><div class="dt-desc">${escapeHtml(d.description)}</div></div>` : ''}
+    <div class="dt-sec"><div class="dt-sec__t"><i class="fas fa-list-ol" style="color:var(--accent);margin-right:6px"></i>章节（${(d.chapters || []).length}）</div>${chapHtml}</div>`;
+}
+
+function _dtBind(d) {
+  const root = document.getElementById('dtRoot');
+  const on = (act, fn) => { const b = root.querySelector(`[data-act="${act}"]`); if (b) b.onclick = fn; };
+
+  on('read', () => { location.href = '/reader/' + d.jm_id; });
+
+  on('dl', () => { pickCategories([], (cats) => downloadComic(d.jm_id, cats, d.title)); });
+
+  on('fav', async () => {
+    const r = await api('POST', `/api/status/${d.jm_id}/favorite`);
+    if (r && r.success) { toast(r.favorite ? '已收藏' : '已取消收藏', 'success'); initDetail(); }
+    else toast((r && r.message) || '操作失败', 'error');
+  });
+
+  on('move', () => {
+    pickCategories((d.categories || []).map(c => c.id), async (cats) => {
+      const res = await api('PUT', `/api/comic/${d.jm_id}/categories`, { category_ids: cats });
+      if (res && res.success) { toast('已更新分类', 'success'); initDetail(); }
+      else toast((res && res.message) || '更新分类失败', 'error');
+    });
+  });
+
+  on('del', async () => {
+    if (!confirm('移入回收站：立即删除本地图片，记录与封面保留 7 天，期间可重新下载拾回。继续？')) return;
+    const r = await api('DELETE', `/api/delete/${d.jm_id}`);
+    if (r && r.success) { toast('已移入回收站', 'success'); initDetail(); }
+    else toast((r && r.message) || '操作失败', 'error');
+  });
+
+  on('block-author', () => blockAuthor(d.author));
+  on('block-work', () => blockWork(d.jm_id, d.title));
+}

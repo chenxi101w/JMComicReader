@@ -181,11 +181,16 @@ jmcomicreader-windows/
 
 | 文档 | 说明 |
 |------|------|
+| [docs/文档导航与开发规范.md](docs/文档导航与开发规范.md) | 文档索引 + 开发规范（接手先读） |
+| [docs/需求文档.md](docs/需求文档.md) | 总体需求 + 变更记录 |
+| [docs/架构报告.md](docs/架构报告.md) | 系统架构与 Android 复刻准备 |
 | [docs/API.md](docs/API.md) | 后端 HTTP 接口契约 |
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 系统架构与 Android 复刻准备 |
+| [docs/功能函数清单.md](docs/功能函数清单.md) | 全局功能函数索引 |
+| [docs/已知坑与发版铁律.md](docs/已知坑与发版铁律.md) | 发版铁律 + 已踩过的坑 |
+| [docs/真机验证清单.md](docs/真机验证清单.md) | 发版必测 checklist |
 | [docs/SHARE.md](docs/SHARE.md) | 分享包使用与分发说明 |
 | [docs/CODE_REVIEW.md](docs/CODE_REVIEW.md) | 代码审查与修复记录 |
-| [docs/CHANGELOG.md](docs/CHANGELOG.md) | 版本更新日志（含每版更新说明） |
+| [docs/升级日志/CHANGELOG.md](docs/升级日志/CHANGELOG.md) | 版本更新日志（含每版更新说明） |
 | [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | 故障排查（界面错乱/UI 变样等） |
 | [docs/LICENSE](docs/LICENSE) | MIT 许可证 |
 

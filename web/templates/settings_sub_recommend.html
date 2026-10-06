@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}推荐设置 · 设置{% endblock %}
+{% block active_route %}settings{% endblock %}
+{% block page_title %}推荐设置{% endblock %}
+{% block subtitle %}{{ sub_title }} · 设置{% endblock %}
+{% block content %}
+
+  <a href="/settings" class="d-back drill-back" style="margin:0 0 14px"><i class="fas fa-arrow-left"></i> 返回设置</a>
+    <div class="section settings-detail page-enter" id="settingsSubPage" data-sub="recommend">
+    <h3 class="section-title">推荐</h3>
+    <div class="settings-list">
+
+      <div class="setting-row">
+        <div class="setting-row__icon"><i class="fas fa-wand-magic-sparkles"></i></div>
+        <div class="setting-row__main">
+          <div class="setting-row__label">启用兴趣推荐</div>
+        </div>
+        <div class="setting-row__control">
+          <label class="switch"><input type="checkbox" id="recommendEnabled" checked><span class="track"></span></label>
+        </div>
+      </div>
+
+      <div class="setting-row">
+        <div class="setting-row__icon"><i class="fas fa-list-ol"></i></div>
+        <div class="setting-row__main">
+          <div class="setting-row__label">推荐数量</div>
+        </div>
+        <div class="setting-row__control">
+          <input type="number" min="4" max="80" step="4" class="search-input" id="recommendCount" value="20" style="width:110px;padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface-2)">
+        </div>
+      </div>
+
+      <div class="subsection-title">推荐依据</div>
+      <div id="recommendBasis" style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 14px">
+        <button class="basis-chip on" data-basis="keyword"><i class="fas fa-magnifying-glass"></i> 常搜索</button>
+        <button class="basis-chip on" data-basis="author"><i class="fas fa-user-pen"></i> 作者</button>
+        <button class="basis-chip on" data-basis="tag"><i class="fas fa-tag"></i> 标签</button>
+      </div>
+
+      <div class="subsection-title">自定义内容</div>
+      <div id="recommendCustomBlocks" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px">
+        <div class="rc-block" data-type="name" style="border:1px solid var(--border);border-radius:var(--radius-md);padding:12px;background:var(--surface-2)">
+          <div style="font-weight:700;color:var(--text-1);margin-bottom:8px"><i class="fas fa-book"></i> 关键字</div>
+          <div data-empty style="font-size:12px;color:var(--text-3);display:none">暂未添加</div>
+          <div data-list style="display:flex;flex-wrap:wrap;gap:6px;min-height:28px"></div>
+          <div style="display:flex;gap:6px;margin-top:8px">
+            <input data-add-input class="search-input" placeholder="例：青梅竹马" style="padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);flex:1">
+            <button data-add-btn class="btn btn--sm btn--primary"><i class="fas fa-plus"></i></button>
+            <button data-clear class="btn btn--sm btn--ghost"><i class="fas fa-trash"></i> 清</button>
+          </div>
+        </div>
+        <div class="rc-block" data-type="tag" style="border:1px solid var(--border);border-radius:var(--radius-md);padding:12px;background:var(--surface-2)">
+          <div style="font-weight:700;color:var(--text-1);margin-bottom:8px"><i class="fas fa-tag"></i> 标签</div>
+          <div data-empty style="font-size:12px;color:var(--text-3);display:none">暂未添加</div>
+          <div data-list style="display:flex;flex-wrap:wrap;gap:6px;min-height:28px"></div>
+          <div style="display:flex;gap:6px;margin-top:8px">
+            <input data-add-input class="search-input" placeholder="例：纯爱" style="padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);flex:1">
+            <button data-add-btn class="btn btn--sm btn--primary"><i class="fas fa-plus"></i></button>
+            <button data-clear class="btn btn--sm btn--ghost"><i class="fas fa-trash"></i> 清</button>
+          </div>
+        </div>
+        <div class="rc-block" data-type="author" style="border:1px solid var(--border);border-radius:var(--radius-md);padding:12px;background:var(--surface-2)">
+          <div style="font-weight:700;color:var(--text-1);margin-bottom:8px"><i class="fas fa-user-pen"></i> 作者</div>
+          <div data-empty style="font-size:12px;color:var(--text-3);display:none">暂未添加</div>
+          <div data-list style="display:flex;flex-wrap:wrap;gap:6px;min-height:28px"></div>
+          <div style="display:flex;gap:6px;margin-top:8px">
+            <input data-add-input class="search-input" placeholder="作者名" style="padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);flex:1">
+            <button data-add-btn class="btn btn--sm btn--primary"><i class="fas fa-plus"></i></button>
+            <button data-clear class="btn btn--sm btn--ghost"><i class="fas fa-trash"></i> 清</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="setting-card" style="margin-top:14px">
+        <div class="setting-card__title"><i class="fas fa-sliders"></i> 当前参数</div>
+        <div class="setting-card__desc" id="recommendParamInfo">—</div>
+      </div>
+
+    </div>
+  </div>
+
+{% endblock %}

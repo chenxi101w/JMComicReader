@@ -1,34 +1,49 @@
 {% extends "base.html" %}
-{% block subtitle %}本地书架{% endblock %}
+{% block title %}书架 · 本地漫画{% endblock %}
+{% block active_route %}library{% endblock %}
+{% block page_title %}书架{% endblock %}
+
 {% block content %}
 
-  <div class="library-layout">
-    <aside class="library-side">
-      <div class="library-side__head">
-        <span class="section-title" style="margin:0">分类</span>
-        <div style="display:flex;gap:6px">
-          <button class="mini-btn" id="newCatBtn" title="新建分类"><i class="fas fa-folder-plus"></i></button>
-          <button class="mini-btn" id="newSubBtn" title="在所选下新建子分类"><i class="fas fa-sitemap"></i></button>
+  {# ── 书架：左侧分类树（常驻，选分类 + 整理合一） + 右侧漫画网格 ── #}
+  <div class="d-section">
+    <div class="lib-layout">
+
+      <aside class="lib-side">
+        <div class="lib-side__head">
+          <span class="lib-side__title">分类</span>
+          <span class="lib-side__acts">
+            <button class="d-back lib-iconbtn" id="treeToggleAll" title="折叠/展开全部子分类"><i class="fas fa-folder-minus"></i></button>
+            <button class="d-back lib-iconbtn" id="newSubBtn" title="在当前分类下新建子分类"><i class="fas fa-plus"></i></button>
+            <button class="d-back lib-iconbtn" id="newCatBtn" title="新建顶级分类"><i class="fas fa-folder-plus"></i></button>
+          </span>
+        </div>
+        <div class="tree" id="catTree">
+          <div class="tree-empty">加载中…</div>
+        </div>
+      </aside>
+
+      <div class="lib-main">
+        <div class="lib-head">
+          <h2 class="lib-head__title">
+            <span id="currentCatName">全部漫画</span>
+            <span class="lib-head__count" id="currentCatCount"></span>
+          </h2>
+          <div class="lib-head__acts">
+            <button class="d-back lib-iconbtn" id="recycleEntry" title="回收站：看完或删除的漫画保留 7 天，可恢复或重新下载">
+              <i class="fas fa-trash-can"></i><span class="count" id="recycleBadge" style="display:none"></span>
+            </button>
+          </div>
+        </div>
+
+        <div class="d-comic-grid stagger" id="comicGrid"></div>
+        <div class="empty" id="emptyState" style="display:none;background:var(--d-bg);border-radius:16px;padding:36px 24px;text-align:center;border:1px dashed var(--d-border)">
+          <div class="empty__icon" style="width:60px;height:60px;border-radius:18px;background:var(--d-grad-soft);display:grid;place-items:center;margin:0 auto 14px;color:var(--accent);font-size:24px"><i class="fas fa-folder-open"></i></div>
+          <h3 style="color:var(--d-text-1);font-size:16px;margin:0">这个分类还是空的</h3>
         </div>
       </div>
-      <div class="tree" id="catTree">
-        <div class="tree-empty">加载中…</div>
-      </div>
-      <p class="lib-hint"><i class="fas fa-info-circle"></i> 点漫画左上角 <i class="fas fa-folder-plus"></i> 移入分类；点文件夹右侧 <i class="fas fa-arrows-up-down-left-right"></i> 调层级；也可拖拽</p>
-    </aside>
 
-    <section>
-      <h3 class="section-title">
-        <span id="currentCatName">全部漫画</span>
-        <span class="count" id="currentCatCount"></span>
-      </h3>
-      <div class="comic-grid stagger" id="comicGrid"></div>
-      <div class="empty" id="emptyState" style="display:none">
-        <div class="empty__icon"><i class="fas fa-folder-open"></i></div>
-        <h3>这个分类还是空的</h3>
-        <p>去「搜索」下载漫画，或新建子分类整理</p>
-      </div>
-    </section>
+    </div>
   </div>
 
 {% endblock %}

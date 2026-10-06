@@ -18,6 +18,9 @@ from core.models.database import (
     get_comic_categories,
     get_all_comic_categories,
     set_comic_categories,
+    clear_recycle_marks,
+    set_status_bits,
+    BIT_LOCAL,
 )
 
 
@@ -188,26 +191,52 @@ class ComicManager:
             )
             conn.commit()
             self._invalidate_index()
+            # 回收站：重新下载完成 → 自动拾回（对齐 Android restoreBook）
+            self._restore_from_recycle(jm_id)
             return True
         except Exception as e:
             print(f"添加已下载漫画失败 {jm_id}: {e}")
             return False
 
-    def get_downloaded_comics(self, category_id: Optional[int] = None) -> List[Dict]:
-        """获取已下载漫画列表。可选按分类筛选。"""
+    def _restore_from_recycle(self, jm_id: int) -> None:
+        """下载完成后的回收站拾回：本地内容已重建，清掉 trashed / 宽限期并置 LOCAL 位。"""
+        try:
+            clear_recycle_marks(jm_id)
+            set_status_bits(jm_id, BIT_LOCAL)
+        except Exception as e:
+            print(f"回收站拾回失败 {jm_id}: {e}")
+
+    def get_downloaded_comics(
+        self, category_id: Optional[int] = None, uncategorized: bool = False
+    ) -> List[Dict]:
+        """获取已下载漫画列表。
+
+        - category_id 指定时按分类筛选
+        - uncategorized=True 时只返回「未归类」（无任何分类关联）的漫画，对应 Android 的默认分类
+        """
         conn = _get_conn()
-        if category_id is not None:
-            query = """SELECT d.jm_id, d.title, d.author, d.tags, d.favorites, d.pages, d.chapter_count,
-                              d.download_time, d.last_read_time, d.read_progress, d.file_size
+        _cols = ("d.jm_id, d.title, d.author, d.tags, d.favorites, d.pages, d.chapter_count, "
+                 "d.download_time, d.last_read_time, d.read_progress, d.file_size, "
+                 "d.favorite, d.finished")
+        if uncategorized:
+            # 未归类：已下载且不存在于 comic_categories
+            query = f"""SELECT {_cols}
+                       FROM downloaded_comics d
+                       WHERE NOT EXISTS (
+                           SELECT 1 FROM comic_categories cc WHERE cc.comic_jm_id = d.jm_id
+                       )
+                       ORDER BY d.download_time DESC"""
+            rows = conn.execute(query).fetchall()
+        elif category_id is not None:
+            query = f"""SELECT {_cols}
                        FROM downloaded_comics d
                        INNER JOIN comic_categories cc ON d.jm_id = cc.comic_jm_id
                        WHERE cc.category_id = ?
                        ORDER BY d.download_time DESC"""
             rows = conn.execute(query, (category_id,)).fetchall()
         else:
-            query = """SELECT jm_id, title, author, tags, favorites, pages, chapter_count,
-                              download_time, last_read_time, read_progress, file_size
-                       FROM downloaded_comics ORDER BY download_time DESC"""
+            query = f"""SELECT {_cols}
+                       FROM downloaded_comics d ORDER BY d.download_time DESC"""
             rows = conn.execute(query).fetchall()
 
         # 单次 listdir 建索引 + 批量取分类，避免 O(n²) 的逐本扫描与逐条查库
@@ -256,6 +285,8 @@ class ComicManager:
             "read_progress": row["read_progress"],
             "file_size": row["file_size"],
             "category_ids": cat_ids,
+            "favorite": row["favorite"] or 0,
+            "finished": row["finished"] or 0,
         })
         return comics
 
@@ -279,7 +310,7 @@ class ComicManager:
         """
         conn = _get_conn()
         row = conn.execute(
-            "SELECT title, author, tags, favorites, pages, chapter_count, cover_path, file_size "
+            "SELECT title, author, tags, description, favorites, pages, chapter_count, cover_path, file_size "
             "FROM downloaded_comics WHERE jm_id = ?",
             (jm_id,),
         ).fetchone()
@@ -297,11 +328,19 @@ class ComicManager:
             "author": row["author"],
             "tags": row["tags"].split(",") if row["tags"] else [],
             "favorites": row["favorites"],
+            "description": row["description"] or "",
             "pages": row["pages"] or 0,
             "chapter_count": row["chapter_count"] or 0,
             "cover_path": cover_path,
             "file_size": row["file_size"],
         }
+
+    def get_read_progress(self, jm_id: int) -> int:
+        """该本最近阅读到的页码（0 = 从没读过）。详情页进度条用。"""
+        row = _get_conn().execute(
+            "SELECT read_progress FROM downloaded_comics WHERE jm_id = ?", (jm_id,)
+        ).fetchone()
+        return int(row["read_progress"] or 0) if row else 0
 
     def get_comic_pages(self, jm_id: int) -> int:
         conn = _get_conn()
@@ -440,7 +479,28 @@ class ComicManager:
 
     # ─── 删除 ──────────────────────────────────────────────
 
-    def delete_comic(self, jm_id: int) -> bool:
+    # ─── 删除（软删 / 彻底删，回收站语义：对齐 Android RecycleManager）──
+
+    def delete_local_keep_record(self, jm_id: int) -> bool:
+        """只删本地图片内容，**保留**记录行与封面（回收站软删）。
+
+        两种情况调用：
+          - 宽限期到期扫描：到期后自动删本地内容
+          - 手动「移入回收站」：立即删本地内容
+        对应 Android 的 deleteLocalKeepBookFn；删完仍能凭封面重新下载。
+        """
+        try:
+            comic_dir = self._find_downloaded_dir(jm_id)
+            if comic_dir and os.path.isdir(comic_dir):
+                shutil.rmtree(comic_dir, ignore_errors=True)
+            self._invalidate_index()
+            return True
+        except Exception as e:
+            print(f"删除本地内容失败 {jm_id}: {e}")
+            return False
+
+    def delete_completely(self, jm_id: int) -> bool:
+        """彻底删除：记录 + 分类关联 + 本地内容全清（回收站「彻底删除」用）。"""
         try:
             conn = _get_conn()
             conn.execute("DELETE FROM downloaded_comics WHERE jm_id = ?", (jm_id,))
@@ -452,8 +512,12 @@ class ComicManager:
             self._invalidate_index()
             return True
         except Exception as e:
-            print(f"删除漫画失败 {jm_id}: {e}")
+            print(f"彻底删除漫画失败 {jm_id}: {e}")
             return False
+
+    def delete_comic(self, jm_id: int) -> bool:
+        """兼容旧调用：等价于彻底删除（新代码请显式调用 delete_completely）。"""
+        return self.delete_completely(jm_id)
 
     def update_read_progress(self, jm_id: int, page_num: int) -> None:
         conn = _get_conn()

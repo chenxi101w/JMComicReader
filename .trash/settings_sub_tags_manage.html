@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}标签库管理 · 设置{% endblock %}
+{% block active_route %}settings{% endblock %}
+{% block page_title %}标签库管理{% endblock %}
+{% block subtitle %}{{ sub_title }} · 设置{% endblock %}
+{% block content %}
+
+  <a href="/settings" class="d-back drill-back" style="margin:0 0 14px"><i class="fas fa-arrow-left"></i> 返回设置</a>
+  <div class="section settings-detail page-enter" id="tagsManageHost" data-sub="tags-manage">
+  <h3 class="section-title">标签库管理</h3>
+
+  <!-- ===== 顶部控制：数据源 segmented + 双方计数 ===== -->
+  <div class="setting-card" style="margin-bottom:12px">
+    <div class="manage-top">
+      <div class="segmented" role="tablist" aria-label="选择数据源">
+        <button class="segment on" id="segInterest" data-lib="interest" type="button"><i class="fas fa-magnifying-glass"></i> 兴趣库（搜索累积）<span class="segment__count" id="libTagCountManage">0</span></button>
+        <button class="segment" id="segExp" data-lib="experimental" type="button"><i class="fas fa-flask"></i> 实验库（JM 号全量字典）<span class="segment__count" id="libExpTagCountManage">0</span></button>
+      </div>
+      <div class="manage-actions-top">
+        <label class="switch-inline">
+          <input type="checkbox" id="hideIrrelevantManage" checked>
+          <span>隐藏无关标签</span>
+        </label>
+      </div>
+    </div>
+
+    <!-- ===== Filter tabs：全部 / 喜欢 / 讨厌 / 无关 ===== -->
+    <div class="filter-tabs" id="filterTabsManage">
+      <button class="filter-tab on" data-mode="all" type="button"><span>全部</span><span class="filter-tab__badge" id="badgeAll">0</span></button>
+      <button class="filter-tab" data-mode="like" type="button"><span>❤ 喜欢</span><span class="filter-tab__badge filter-tab__badge--like" id="badgeLike">0</span></button>
+      <button class="filter-tab" data-mode="hate" type="button"><span>🚫 讨厌</span><span class="filter-tab__badge filter-tab__badge--hate" id="badgeHate">0</span></button>
+      <button class="filter-tab" data-mode="irrelevant" type="button"><span>～ 无关</span><span class="filter-tab__badge filter-tab__badge--irrel" id="badgeIrrel">0</span></button>
+      <div class="filter-tabs__spacer"></div>
+      <div class="search-mini">
+        <i class="fas fa-search search-mini__icon"></i>
+        <input id="searchTagManage" type="text" placeholder="按名称过滤标签…" autocomplete="off">
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Chip 主展示 ===== -->
+  <div class="setting-card" style="padding: 14px">
+    <div class="row-right" style="margin-bottom:6px; min-height:16px">
+      <span class="muted" id="pageInfoManage" style="font-size:12px"></span>
+    </div>
+    <div class="chip-grid" id="gridManage">
+      <!-- JS 动态渲染 -->
+    </div>
+
+    <!-- ===== Empty state ===== -->
+    <div class="empty-state" id="emptyManage" style="display:none">
+      <i class="fas fa-box-open empty-state__icon"></i>
+      <div class="empty-state__title">标签库还是空的。</div>
+      <div class="empty-state__desc">去搜索几次，命中的标签会自动累积；或用下方输入框手动添加。</div>
+    </div>
+
+    <!-- ===== Show more ===== -->
+    <div class="row-center" style="margin-top:12px">
+      <button class="btn btn--sm btn--ghost" id="moreBtnManage" type="button" style="display:none">显示更多标签</button>
+    </div>
+  </div>
+
+  <!-- ===== 手动添加 ===== -->
+  <div class="setting-card" style="margin-top:12px">
+    <div class="setting-card__title"><i class="fas fa-plus-circle"></i> 手动添加</div>
+    <div class="setting-row__desc" style="margin:4px 0 10px">立即写入到对应用户偏好或（仅"加为当前库"时）当前激活的数据源。可输入 <b>逗号 / 空格 / 换行</b> 分隔的多个标签批量录入。</div>
+    <div class="add-tag-row">
+      <input id="addTagInput" class="input input--stretch" type="text" placeholder="标签名，支持批量：巨乳, 单行本, オリジナル" autocomplete="off">
+      <button class="btn btn--ghost btn--sm" id="addLibBtn" type="button"><i class="fas fa-bookmark"></i> 加为当前库</button>
+      <button class="btn btn--primary btn--sm" id="addLikeBtn" type="button"><i class="fas fa-heart"></i> 加为喜欢</button>
+      <button class="btn btn--danger btn--sm" id="addHateBtn" type="button"><i class="fas fa-ban"></i> 加为讨厌</button>
+      <button class="btn btn--ghost btn--sm" id="addIrrelBtn" type="button"><i class="fas fa-eye-slash"></i> 加为无关</button>
+    </div>
+  </div>
+
+</div>
+
+{% endblock %}

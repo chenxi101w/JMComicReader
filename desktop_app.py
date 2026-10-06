@@ -257,6 +257,172 @@ def configure_utf8_output():
             pass
 
 
+WM_SETICON = 0x0080
+ICON_SMALL = 0
+ICON_BIG = 1
+IMAGE_ICON = 1
+LR_LOADFROMFILE = 0x0010
+GCLP_HICON = -14
+GCLP_HICONSM = -34
+GA_ROOT = 2
+
+
+def _icon_dbg(msg):
+    """图标切换调试日志：写入用户数据目录 icon_dbg.log，便于定位运行时问题。"""
+    try:
+        base = get_default_user_base_dir()
+        base.mkdir(parents=True, exist_ok=True)
+        with open(base / "icon_dbg.log", "a", encoding="utf-8") as f:
+            f.write(msg + "\n")
+    except Exception:
+        pass
+
+
+def _find_main_hwnd():
+    """获取 app 主窗口句柄（当前进程的可见顶层窗口）。
+
+    优先枚举标题精确匹配 WINDOW_TITLE 的窗口；找不到则回退到当前进程
+    面积最大的可见顶层窗口。不依赖 window.native——打包后 native 在
+    webview.start() 创建窗口之前为 None，且各 pywebview 后端内部结构不同。
+    """
+    import ctypes
+    import ctypes.wintypes as wt
+
+    user32 = ctypes.windll.user32
+    cur_pid = os.getpid()
+    matches = []
+
+    @ctypes.WINFUNCTYPE(wt.BOOL, wt.HWND, wt.LPARAM)
+    def _enum_cb(hwnd, lparam):
+        if not user32.IsWindowVisible(hwnd):
+            return True
+        pid = wt.DWORD()
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        if pid.value != cur_pid:
+            return True
+        try:
+            buf = ctypes.create_unicode_buffer(512)
+            length = user32.GetWindowTextW(hwnd, buf, 512)
+            title = buf.value[:length] if length else ""
+        except Exception:
+            title = ""
+        try:
+            rect = wt.RECT()
+            user32.GetWindowRect(hwnd, ctypes.byref(rect))
+            area = (rect.right - rect.left) * (rect.bottom - rect.top)
+        except Exception:
+            area = 0
+        matches.append((title, area, hwnd))
+        return True
+
+    try:
+        user32.EnumWindows(_enum_cb, 0)
+    except Exception as exc:
+        _icon_dbg("[icon] EnumWindows 失败: " + repr(exc))
+        return None
+
+    if not matches:
+        return None
+    for title, _, hwnd in matches:
+        if title == WINDOW_TITLE:
+            return hwnd
+    matches.sort(key=lambda m: m[1], reverse=True)
+    return matches[0][2]
+
+
+def _apply_window_icon(window, bundle_root, key):
+    """把窗口/任务栏图标设置为指定 key 的 .ico（对齐 Android「应用图标」设置）。
+
+    实现：EnumWindows 定位主窗口（取其根窗口）后：
+      1) SetClassLongPtrW 修改窗口类图标（GCLP_HICON/HICONSM）——任务栏、Alt+Tab
+         及后续新建窗口均使用该类图标；
+      2) SendMessageW 发送 WM_SETICON（ICON_SMALL 标题栏小图标 + ICON_BIG 大图标）。
+    不依赖 window.native（打包后 native 在窗口创建前为 None），不依赖 System.Drawing
+    （规避 PyInstaller 打包后 pythonnet 程序集缺失）。图标句柄保留不销毁，避免类图标
+    句柄失效导致图标不显示。成功返回 True；窗口尚未创建或失败返回 False，调用方重试。
+    """
+    try:
+        import os
+        import ctypes
+        import ctypes.wintypes as wt
+        key = str(key or "").strip().lower() or "default"
+        ico = os.path.join(bundle_root, "web", "static", "img", "icons", key + ".ico")
+        if not os.path.exists(ico):
+            ico = os.path.join(bundle_root, "web", "static", "img", "icons", "default.ico")
+        if not os.path.exists(ico):
+            _icon_dbg(f"[icon] ico 缺失: bundle={bundle_root}")
+            return False
+        _icon_dbg(f"[icon] 目标={key} ico={os.path.basename(ico)}")
+
+        user32 = ctypes.windll.user32
+        user32.LoadImageW.restype = ctypes.c_void_p
+        user32.LoadImageW.argtypes = [
+            ctypes.c_void_p, ctypes.c_wchar_p, ctypes.c_uint,
+            ctypes.c_int, ctypes.c_int, ctypes.c_uint,
+        ]
+        hicon = user32.LoadImageW(None, ico, IMAGE_ICON, 0, 0, LR_LOADFROMFILE)
+        _icon_dbg(f"[icon] LoadImageW hicon={hicon}")
+        if not hicon:
+            return False
+        self_ptr = ctypes.c_void_p(hicon)
+
+        try:
+            hwnd = _find_main_hwnd()
+            _icon_dbg(f"[icon] 主窗口句柄 hwnd={int(hwnd) if hwnd else None}")
+            if not hwnd:
+                return False
+            # 取根窗口（若枚举到的是 owned/popup 窗口则回到最顶层根窗口）
+            root = ctypes.c_void_p(user32.GetAncestor(hwnd, GA_ROOT))
+            if not root.value:
+                root = hwnd
+            _icon_dbg(f"[icon] 根窗口句柄 root={int(root.value)}")
+
+            # 窗口类图标：任务栏 / Alt+Tab / 后续新建窗口生效
+            user32.SetClassLongPtrW.argtypes = [wt.HWND, ctypes.c_int, ctypes.c_void_p]
+            user32.SetClassLongPtrW.restype = ctypes.c_void_p
+            user32.SetClassLongPtrW(root, GCLP_HICON, self_ptr)
+            user32.SetClassLongPtrW(root, GCLP_HICONSM, self_ptr)
+
+            # 窗口图标：标题栏小图标（ICON_SMALL）+ 任务栏大图标（ICON_BIG）
+            user32.SendMessageW.argtypes = [
+                wt.HWND, ctypes.c_uint, ctypes.c_void_p, ctypes.c_void_p,
+            ]
+            user32.SendMessageW(root, WM_SETICON, ctypes.c_void_p(ICON_SMALL), self_ptr)
+            user32.SendMessageW(root, WM_SETICON, ctypes.c_void_p(ICON_BIG), self_ptr)
+            _icon_dbg("[icon] SetClass + WM_SETICON OK（句柄保留）")
+            return True
+        except Exception as exc:
+            _icon_dbg("[icon] 设置窗口图标失败: " + repr(exc))
+            return False
+    except Exception as exc:
+        _icon_dbg("[icon] apply 失败: " + repr(exc))
+        return False
+
+
+def _window_icon_watcher(window, bundle_root, stop_event):
+    """轮询后端 app_icon 配置，变化时及时更新窗口/任务栏图标（3s 间隔）。
+
+    窗口在 webview.start() 之后才创建，因此设置失败（窗口未就绪）时持续重试，
+    直到首次生效；用户切换图标后再次触发重设。
+    """
+    import time
+    last = None
+    _applied = False
+    while not stop_event.is_set():
+        try:
+            from core.models.database import get_system_config
+            cur = (get_system_config("app_icon") or "default").strip().lower() or "default"
+            if cur != last:
+                _icon_dbg(f"[icon] watcher 读到 app_icon={cur}")
+                last = cur
+                _applied = False
+            if not _applied and _apply_window_icon(window, bundle_root, cur):
+                _applied = True
+        except Exception as exc:
+            _icon_dbg("[icon] watcher 读取失败: " + repr(exc))
+        time.sleep(3)
+
+
 def run_desktop():
     configure_utf8_output()
     configure_windows_app_id()
@@ -305,6 +471,17 @@ def run_desktop():
             height=WINDOW_HEIGHT,
             min_size=WINDOW_MIN_SIZE,
         )
+        # 窗口/任务栏图标跟随「设置→外观→应用图标」（轮询后端 app_icon，切图标后 ≤3s 生效）
+        _icon_stop = threading.Event()
+        try:
+            from core.config import PROJECT_ROOT as _bundle_root
+            threading.Thread(
+                target=_window_icon_watcher,
+                args=(window, str(_bundle_root), _icon_stop),
+                daemon=True,
+            ).start()
+        except Exception:
+            pass
         try:
             # private_mode=False 才能持久化 localStorage（收藏标签/搜索历史/常用标签）；
             # storage_path 指定 WebView2 用户数据目录，配合固定端口(.app_url)实现数据持久化。
@@ -327,6 +504,10 @@ def run_desktop():
             except KeyboardInterrupt:
                 pass
         finally:
+            try:
+                _icon_stop.set()
+            except Exception:
+                pass
             try:
                 window.destroy()
             except Exception:

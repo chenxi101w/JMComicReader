@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}下载设置 · 设置{% endblock %}
+{% block active_route %}settings{% endblock %}
+{% block page_title %}下载设置{% endblock %}
+{% block subtitle %}{{ sub_title }} · 设置{% endblock %}
+{% block content %}
+
+  <a href="/settings" class="d-back drill-back" style="margin:0 0 14px"><i class="fas fa-arrow-left"></i> 返回设置</a>
+    <div class="section settings-detail page-enter" id="settingsSubPage" data-sub="download">
+    <h3 class="section-title">下载与备份</h3>
+    <div class="settings-list">
+
+      <div class="subsection-title">下载参数</div>
+
+      <div class="setting-row">
+        <div class="setting-row__icon"><i class="fas fa-gauge-high"></i></div>
+        <div class="setting-row__main">
+          <div class="setting-row__label">同时下载任务数</div>
+        </div>
+        <div class="setting-row__control" style="display:flex;align-items:center;gap:10px">
+          <input type="range" class="slider" id="maxConcurrent" min="1" max="10" value="3">
+          <span id="maxConcurrentVal" style="min-width:22px;text-align:center;font-weight:600">3</span>
+        </div>
+      </div>
+
+      <div class="setting-row">
+        <div class="setting-row__icon"><i class="fas fa-image"></i></div>
+        <div class="setting-row__main">
+          <div class="setting-row__label">下载图片质量</div>
+        </div>
+        <div class="setting-row__control">
+          <select id="imageQuality" class="search-input" style="padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface-2)">
+            <option value="original">Original（原图）</option>
+            <option value="high">High（高清）</option>
+            <option value="normal">Normal（普通）</option>
+            <option value="low">Low（省流量）</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="subsection-title">缓存</div>
+      <div class="setting-row">
+        <div class="setting-row__icon"><i class="fas fa-database"></i></div>
+        <div class="setting-row__main">
+          <div class="setting-row__label">当前缓存占用</div>
+        </div>
+        <div class="setting-row__control" style="display:flex;gap:8px;align-items:center">
+          <span id="cacheSize" style="font-weight:600">— MB</span>
+          <button class="btn btn--sm btn--ghost" id="clearCacheBtn"><i class="fas fa-broom"></i> 清理</button>
+        </div>
+      </div>
+
+      <div class="subsection-title">网络 / 代理</div>
+      <div class="setting-row">
+        <div class="setting-row__icon"><i class="fas fa-network-wired"></i></div>
+        <div class="setting-row__main">
+          <div class="setting-row__label">启用代理下载</div>
+        </div>
+        <div class="setting-row__control">
+          <label class="switch"><input type="checkbox" id="proxyEnabled"><span class="track"></span></label>
+        </div>
+      </div>
+      <div class="setting-row">
+        <div class="setting-row__icon"><i class="fas fa-link"></i></div>
+        <div class="setting-row__main">
+          <div class="setting-row__label">代理地址</div>
+        </div>
+        <div class="setting-row__control" style="width:min(340px,100%)">
+          <input type="text" class="search-input" id="proxyUrl" placeholder="http://127.0.0.1:7890" style="padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface-2);width:100%">
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+{% endblock %}

@@ -1,91 +1,62 @@
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>阅读器 · JM Reader</title>
-  <script>
-    (function () {
-      try {
-        var t = localStorage.getItem('jm_theme');
-        if (!t) t = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-        document.documentElement.setAttribute('data-theme', t);
-      } catch (e) {}
-    })();
-  </script>
-  <script>
-  /* 渲染引擎自检（同 base.html）：缺/损 WebView2 时退回 IE 内核会令阅读器页面错乱，此处给出明确修复指引。ES5 语法保证 IE 可执行。 */
-  (function () {
-    function showEngineWarning() {
-      try {
-        var d = document.createElement('div');
-        d.setAttribute('style', 'position:fixed;inset:0;z-index:99999;background:#05070c;color:#eef1f8;' +
-          'font-family:Segoe UI,Microsoft YaHei,sans-serif;padding:40px;line-height:1.7;overflow:auto;');
-        d.innerHTML = '<div style="max-width:680px;margin:0 auto">' +
-          '<h1 style="color:#9b6bff;font-size:22px;margin:0 0 16px">⚠ 界面渲染引擎不可用</h1>' +
-          '<p style="font-size:15px">本程序需要 <b>Microsoft Edge WebView2</b> 运行时才能正确显示界面，' +
-          '但当前系统缺少或已损坏它，程序被迫退回老旧的 IE 内核，导致页面错乱（你看到的“界面变样”即由此引起）。</p>' +
-          '<p style="font-size:15px"><b>解决办法（约 1 分钟）：</b></p>' +
-          '<ol style="font-size:15px;padding-left:20px">' +
-          '<li>打开 <span style="color:#6a7dff">https://developer.microsoft.com/zh-cn/microsoft-edge/webview2/</span></li>' +
-          '<li>下载并运行 <b>Evergreen Bootstrapper</b>（常驻版安装器）</li>' +
-          '<li>安装完成后<b>完全退出本程序并重新打开</b></li>' +
-          '</ol>' +
-          '<p style="font-size:13px;color:#9aa3b8">若已安装仍异常，可在“控制面板→程序”里修复/重装 WebView2 Runtime，' +
-          '或在管理员 PowerShell 运行 <span style="color:#6a7dff">winget install Microsoft.EdgeWebView2.Runtime</span>。</p>' +
-          '</div>';
-        (document.body || document.documentElement).appendChild(d);
-      } catch (e) {}
-    }
-    function engineSupported() {
-      try {
-        if (!window.CSS || !window.CSS.supports) return false;
-        return window.CSS.supports('color', 'var(--x)');
-      } catch (e) { return false; }
-    }
-    if (!engineSupported()) {
-      if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', showEngineWarning);
-      } else { showEngineWarning(); }
-    }
-  })();
-  </script>
-  <link rel="stylesheet" href="/static/css/style.css?v=38">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-</head>
-<body>
-  <div class="reader open" id="reader">
-    <div class="reader__bar">
-      <button id="closeReader" title="返回"><i class="fas fa-arrow-left"></i></button>
-      <div class="title" id="readerTitle">…</div>
-      <div class="reader__zoom">
-        <button id="zoomOut"><i class="fas fa-magnifying-glass-minus"></i></button>
-        <span class="v" id="zoomVal">100%</span>
-        <button id="zoomIn"><i class="fas fa-magnifying-glass-plus"></i></button>
-        <button id="readerSettings" title="阅读设置"><i class="fas fa-gear"></i></button>
+{% extends "base.html" %}
+{% block title %}阅读器 · JM Reader{% endblock %}
+{% block body_mode %}reader-mode{% endblock %}
+{% block active_route %}library{% endblock %}
+{% block page_title %}{% endblock %}
+
+{% block content %}
+
+  <div class="reader open reader-shell" id="reader">
+    {# ── 顶部玻璃态 Toolbar ── #}
+    <div class="reader-shell__topbar reader__bar">
+      <button class="d-back" id="closeReader" title="返回">
+        <i class="fas fa-arrow-left"></i> 返回
+      </button>
+      <div class="reader-shell__title title" id="readerTitle">…</div>
+      <div style="display:inline-flex;gap:8px">
+        <button class="d-icon-btn" id="chapTrigger" title="章节列表">
+          <i class="fas fa-list"></i>
+        </button>
+        <button class="d-icon-btn" id="readerSettings" title="阅读设置">
+          <i class="fas fa-gear"></i>
+        </button>
+        <button class="d-icon-btn" id="zoomOut" title="缩小">
+          <i class="fas fa-magnifying-glass-minus"></i>
+        </button>
+        <span style="display:inline-grid;place-items:center;padding:0 8px;color:var(--d-text-2);font-size:13px;font-weight:600" id="zoomVal">100%</span>
+        <button class="d-icon-btn" id="zoomIn" title="放大">
+          <i class="fas fa-magnifying-glass-plus"></i>
+        </button>
       </div>
     </div>
-    <div class="reader__stage" id="readerStage">
-      <div class="empty"><div class="empty__icon"><i class="fas fa-spinner fa-spin"></i></div><h3>打开中…</h3></div>
+
+    {# ── 阅读主舞台 ── #}
+    <div class="reader-shell__stage reader__stage" id="readerStage">
+      <div class="reader-page" id="readerPageSkel" aria-hidden="true" style="display:none">01</div>
+      <div class="empty"><div class="empty__icon" style="width:60px;height:60px;border-radius:18px;background:var(--d-grad-soft);display:grid;place-items:center;margin:0 auto 14px;color:var(--accent);font-size:24px"><i class="fas fa-spinner fa-spin"></i></div><h3>打开中…</h3></div>
     </div>
-    <div class="reader__chap-trigger" id="chapTrigger" title="章节列表"></div>
-    <aside class="reader__chap-side" id="chapSide" style="display:none">
+
+    {# ── 章节侧栏（右侧弹出） ── #}
+    <aside class="reader__chap-side" id="chapSide" style="display:none;right:0;left:auto;top:64px;bottom:0;width:320px;border-radius:16px 0 0 0;border-left:1px solid var(--d-border);background:var(--d-bg);box-shadow:-12px 0 40px rgba(26,32,48,.08)">
       <div class="reader__chap-side__head">
         <span>章节</span>
         <span id="chapInfo" class="reader__chap-side__info">-</span>
       </div>
       <div class="reader__chap-list" id="chapList"></div>
       <div class="reader__chap-side__nav">
-        <button class="btn" id="prevChapBtn"><i class="fas fa-backward-step"></i> 上一章</button>
-        <button class="btn" id="nextChapBtn">下一章 <i class="fas fa-forward-step"></i></button>
+        <button class="d-btn-page" id="prevChapBtn"><i class="fas fa-backward-step" style="margin-right:6px"></i> 上一章</button>
+        <button class="d-btn-page is-primary" id="nextChapBtn">下一章 <i class="fas fa-forward-step" style="margin-left:6px"></i></button>
       </div>
     </aside>
-    <div class="reader__nav">
-      <button class="btn" id="prevBtn"><i class="fas fa-chevron-left"></i> 上一页</button>
-      <button class="btn btn--ghost" id="pageInfo" title="点击跳转页数" style="color:#aab3c7;align-self:center;font-size:13px;min-width:60px;text-align:center;padding:6px 10px">- / -</button>
-      <button class="btn" id="nextBtn">下一页 <i class="fas fa-chevron-right"></i></button>
+
+    {# ── 底部玻璃态：上一页 / 页码 / 下一页（渐变 CTA） ── #}
+    <div class="reader-shell__bottom reader__nav">
+      <button class="d-btn-page" id="prevBtn"><i class="fas fa-chevron-left" style="margin-right:6px"></i> 上一页</button>
+      <div class="reader-pagination pageInfo" id="pageInfo" title="点击跳转页数" style="cursor:pointer;color:var(--d-text-2);font-weight:600">
+        - / -
+      </div>
+      <button class="d-btn-page is-primary" id="nextBtn">下一页 <i class="fas fa-chevron-right" style="margin-left:6px"></i></button>
     </div>
   </div>
-  <script src="/static/js/app.js?v=38"></script>
-</body>
-</html>
+
+{% endblock %}

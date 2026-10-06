@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}同义词词典 · 设置{% endblock %}
+{% block active_route %}settings{% endblock %}
+{% block page_title %}同义词词典{% endblock %}
+{% block subtitle %}{{ sub_title }} · 设置{% endblock %}
+{% block content %}
+
+  <a href="/settings" class="d-back drill-back" style="margin:0 0 14px"><i class="fas fa-arrow-left"></i> 返回设置</a>
+    <div class="section settings-detail page-enter" id="settingsSubPage" data-sub="synonyms">
+    <h3 class="section-title">同义词 / 别名</h3>
+    <div class="settings-list">
+      <div class="setting-row" style="flex-direction:column;align-items:stretch;gap:12px">
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <select id="aliasType" class="search-input" style="padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface-2)">
+            <option value="tag">标签</option>
+            <option value="author">作者</option>
+          </select>
+          <input class="search-input" id="aliasCanon" placeholder="标准词 canonical（可拖入）">
+          <input class="search-input" id="aliasVariants" placeholder="同义词，逗号分隔（可拖入）" style="flex:1;min-width:240px">
+          <button class="btn btn--primary btn--sm" id="aliasAddBtn"><i class="fas fa-plus"></i> 添加</button>
+        </div>
+        <div id="aliasList" class="manage-list"></div>
+      </div>
+    </div>
+  </div>
+
+{% endblock %}

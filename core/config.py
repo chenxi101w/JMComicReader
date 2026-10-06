@@ -36,6 +36,7 @@ PROJECT_ROOT = BUNDLE_DIR
 
 # BASE_DIR 指向用户数据目录（运行时配置 + 下载 + 缓存）
 BASE_DIR = os.environ.get("BASE_DIR", EXEC_DIR)
+DATA_DIR = BASE_DIR                                           # 与 /api/about 统计语义对齐：用户数据根目录
 DOWNLOAD_DIR = os.environ.get("DOWNLOAD_DIR", os.path.join(BASE_DIR, "DownloadedComics"))
 TEMP_CACHE_DIR = os.environ.get("TEMP_CACHE_DIR", os.path.join(BASE_DIR, "TempCache"))
 

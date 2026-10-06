@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}漫画详情{% endblock %}
+{% block active_route %}search{% endblock %}
+{% block page_title %}漫画详情{% endblock %}
+
+{% block content %}
+
+  <style>
+    /* 详情页局部样式（v2.10.0）：只在 /detail 生效 */
+    .dt-hero { display: flex; gap: 18px; background: var(--d-bg); border: 1px solid var(--d-border);
+      border-radius: 16px; padding: 16px; }
+    .dt-cover { width: 168px; height: 224px; flex: 0 0 168px; border-radius: 12px; object-fit: cover;
+      background: rgba(0,0,0,.06); cursor: zoom-in; }
+    .dt-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+    .dt-title { font-size: 19px; font-weight: 700; color: var(--d-text-1); line-height: 1.35; }
+    .dt-author { font-size: 13px; color: var(--d-text-2); margin-top: 6px; }
+    .dt-author b { color: var(--accent); cursor: pointer; }
+    .dt-author b:hover { text-decoration: underline; }
+    .dt-badges { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+    .dt-badge { font-size: 11px; padding: 3px 9px; border-radius: 20px;
+      background: rgba(0,0,0,.06); color: var(--d-text-2); }
+    .dt-badge.ok { background: rgba(60,160,90,.16); color: #2f7a49; }
+    .dt-badge.warn { background: rgba(212,166,32,.18); color: #8d6f12; }
+    .dt-badge.bad { background: rgba(226,86,74,.16); color: #b14a41; }
+    .dt-progress { margin-top: 12px; }
+    .dt-progress__t { font-size: 12px; color: var(--d-text-3); margin-bottom: 5px; }
+    .dt-bar { height: 6px; border-radius: 4px; background: rgba(0,0,0,.08); overflow: hidden; }
+    .dt-bar > i { display: block; height: 100%; background: var(--accent); width: 0; }
+    .dt-meta { display: flex; flex-wrap: wrap; gap: 18px; margin-top: 12px;
+      font-size: 12px; color: var(--d-text-3); }
+    .dt-meta b { color: var(--d-text-1); font-weight: 700; }
+    .dt-acts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: auto; padding-top: 14px; }
+    .dt-btn { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 14px;
+      border-radius: 10px; border: 1px solid var(--d-border); background: transparent;
+      color: var(--d-text-1); font-size: 13px; cursor: pointer; font-family: inherit; }
+    .dt-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .dt-btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .dt-btn.primary:hover { color: #fff; opacity: .9; }
+    .dt-btn.danger:hover { border-color: #d0574c; color: #d0574c; }
+    .dt-sec { margin-top: 16px; background: var(--d-bg); border: 1px solid var(--d-border);
+      border-radius: 14px; padding: 14px 16px; }
+    .dt-sec__t { font-size: 13px; font-weight: 700; color: var(--d-text-1); margin-bottom: 10px; }
+    .dt-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+    .dt-tag { font-size: 12px; padding: 4px 10px; border-radius: 20px;
+      background: rgba(0,0,0,.05); color: var(--d-text-2); cursor: pointer; }
+    .dt-tag:hover { background: var(--accent); color: #fff; }
+    .dt-desc { font-size: 13px; line-height: 1.75; color: var(--d-text-2); white-space: pre-wrap; }
+    .dt-ch { display: flex; align-items: center; gap: 10px; padding: 7px 0;
+      border-bottom: 1px dashed var(--d-border); font-size: 13px; }
+    .dt-ch:last-child { border-bottom: none; }
+    .dt-ch__no { width: 30px; color: var(--d-text-3); font-size: 12px; }
+    .dt-ch__name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .dt-ch__pages { color: var(--d-text-3); font-size: 12px; }
+    .dt-empty { color: var(--d-text-3); font-size: 13px; }
+    .dt-err { text-align: center; padding: 40px 0; color: var(--d-text-3); font-size: 13px; }
+  </style>
+
+  <div class="d-section">
+    <div class="d-section-title" style="margin:0 0 12px">
+      <i class="fas fa-circle-info" style="color:var(--accent);margin-right:6px"></i>
+      <span>漫画详情</span>
+      <span class="count" id="dtJmId" style="font-size:13px;color:var(--d-text-3);font-weight:500"></span>
+      <span style="margin-left:auto;display:inline-flex;gap:6px">
+        <button class="d-back" id="dtBack" style="padding:5px 12px;font-size:12px;height:32px">
+          <i class="fas fa-arrow-left"></i> 返回
+        </button>
+      </span>
+    </div>
+
+    <div id="dtRoot" data-jm="{{ jm_id }}">
+      <div class="skeleton sk-card" style="height:240px"></div>
+      <div class="skeleton sk-card" style="height:120px;margin-top:16px"></div>
+    </div>
+  </div>
+
+{% endblock %}

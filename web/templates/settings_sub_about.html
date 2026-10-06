@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}关于 · 设置{% endblock %}
+{% block active_route %}settings{% endblock %}
+{% block page_title %}关于{% endblock %}
+{% block subtitle %}{{ sub_title }} · 设置{% endblock %}
+{% block content %}
+
+  <a href="/settings" class="d-back drill-back" style="margin:0 0 14px"><i class="fas fa-arrow-left"></i> 返回设置</a>
+    <div class="section settings-detail page-enter" id="settingsSubPage" data-sub="about">
+    <div class="about-card">
+      <img class="about-card__icon" src="{{ url_for('static', filename='img/app_icon.png') }}" alt="logo" onerror="this.style.display='none'">
+      <div class="about-card__main">
+        <h2 class="about-card__title">JM Comic Reader</h2>
+        <div class="about-card__version">版本 <span id="appVersion">—</span></div>
+        <div class="about-card__desc" id="aboutPlatform">—</div>
+      </div>
+    </div>
+
+    <h3 class="section-title">数据占用</h3>
+    <div class="about-stats">
+      <div class="about-stat">
+        <span class="about-stat__label">用户数据（数据库+缓存）</span>
+        <span class="about-stat__value" id="aboutUserData">—</span>
+      </div>
+      <div class="about-stat">
+        <span class="about-stat__label">漫画本体</span>
+        <span class="about-stat__value" id="aboutComicSize">—</span>
+      </div>
+      <div class="about-stat">
+        <span class="about-stat__label">数据库文件</span>
+        <span class="about-stat__value" id="aboutDbFile">—</span>
+      </div>
+    </div>
+
+    <h3 class="section-title">数量</h3>
+    <div class="about-stats">
+      <div class="about-stat">
+        <span class="about-stat__label">已下载漫画</span>
+        <span class="about-stat__value" id="aboutComicsCount">0 本</span>
+      </div>
+      <div class="about-stat">
+        <span class="about-stat__label">已录入标签（兴趣库）</span>
+        <span class="about-stat__value" id="aboutTagCount">0</span>
+      </div>
+      <div class="about-stat">
+        <span class="about-stat__label">已录入标签（实验库）</span>
+        <span class="about-stat__value" id="aboutExpTagCount">0</span>
+      </div>
+    </div>
+  </div>
+
+{% endblock %}

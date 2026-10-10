@@ -1,5 +1,9 @@
 # 📚 JMComicReader · Windows 桌面漫画阅读器
 
+> 🆕 **轻量重写版已上线**：[**JMComicLite（JM 电脑版 lite）**](https://github.com/chenxi101w/JM-lite-windows) ——
+> 只保留搜索 / 下载 / 阅读 / 书架核心链路：**启动秒开、下载提速 4.3×（断点续下）、连排阅读、分类树拖拽、订阅巡检、回收站**。
+> 本仓库（旧版）功能全量继续维护，两条线并行：**要快、要干净用 lite，要全功能用这里。**
+
 > **一个绿色、免安装的 JM 漫画本地阅读与管理工具** —— 搜索、在线阅读、批量下载、书架管理、智能推荐，全部在桌面搞定。基于 pywebview + Flask，移动优先的响应式界面。
 
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%2F11-0078D4?logo=windows&logoColor=white)](https://www.microsoft.com/windows)

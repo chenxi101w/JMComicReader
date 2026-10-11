@@ -70,6 +70,29 @@
         </div>
       </div>
 
+      <div class="subsection-title">收藏备份（跨端互通，兼容手机端）</div>
+      <div class="setting-row">
+        <div class="setting-row__icon"><i class="fas fa-file-export"></i></div>
+        <div class="setting-row__main">
+          <div class="setting-row__label">导出收藏</div>
+          <div class="setting-row__desc">保存为 JSON 备份文件（含全部收藏漫画）</div>
+        </div>
+        <div class="setting-row__control">
+          <button class="btn" id="favExportBtn"><i class="fas fa-download" style="margin-right:6px"></i>导出</button>
+        </div>
+      </div>
+      <div class="setting-row">
+        <div class="setting-row__icon"><i class="fas fa-file-import"></i></div>
+        <div class="setting-row__main">
+          <div class="setting-row__label">导入收藏</div>
+          <div class="setting-row__desc">选择备份 JSON，已收藏的自动跳过</div>
+        </div>
+        <div class="setting-row__control">
+          <button class="btn" id="favImportBtn"><i class="fas fa-upload" style="margin-right:6px"></i>导入</button>
+          <input type="file" id="favImportFile" accept=".json,application/json" style="display:none">
+        </div>
+      </div>
+
     </div>
   </div>
 

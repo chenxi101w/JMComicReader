@@ -163,8 +163,39 @@ try:
     check("/library 含 recycleEntry", "recycleEntry" in html)
     for dead in ("catNavBlocks", "catTreeWrap", "toggleCatTree", "continueReadingCard"):
         check("/library 不含 %s" % dead, dead not in html)
-    check("base 引用 style.css?v=65", "style.css?v=65" in html)
-    check("base 引用 app.js?v=65", "app.js?v=65" in html)
+    check("base 引用 style.css?v=66", "style.css?v=66" in html)
+    check("base 引用 reader-logic.js?v=66", "reader-logic.js?v=66" in html)
+    check("base 引用 app.js?v=66", "app.js?v=66" in html)
+
+    # ── v2.14 翻新增补断言 ──
+    js = open(os.path.join(ROOT, "web", "static", "js", "app.js"), encoding="utf-8").read()
+    check("阅读器默认连排（scroll）", "Settings.get('reader_wheel_mode', 'scroll')" in js)
+    check("阅读器有连排建列（buildColumn）", "function buildColumn()" in js)
+    check("阅读器有滑轨（readerRail/updateRail）", "readerRail" in js and "function updateRail()" in js)
+    check("阅读器有览图（ReaderLogic.buildOverviewHtml）", "ReaderLogic.buildOverviewHtml" in js)
+    check("阅读器进度防抖落库", "saveProgressDebounced" in js and "/progress" in js)
+    check("WebView2 全局拖拽补丁（preventDefault + 合成 drop）",
+          "document.addEventListener('dragstart', function (e) {\n    e.preventDefault();\n  }, true)" in js
+          and "makeDragEvent('drop'" in js)
+    check("下载引擎：Registry 取代旧 _dl_progress", "_registry = _DownloadRegistry()" in js or
+          ("_DownloadRegistry" in open(os.path.join(ROOT, "core", "app.py"), encoding="utf-8").read()
+           and "_dl_progress" not in open(os.path.join(ROOT, "core", "app.py"), encoding="utf-8").read()))
+    py_app = open(os.path.join(ROOT, "core", "app.py"), encoding="utf-8").read()
+    check("下载可取消（/api/download/cancel）", "/api/download/cancel/" in py_app)
+    check("下载历史带 resumable（续下）", "resumable" in py_app)
+    check("封面代理（/api/cover/proxy + 负缓存）", "/api/cover/proxy/" in py_app and "_COVER_FAIL_TTL" in py_app)
+    check("收藏导入导出（/api/favorites/export|import）",
+          "/api/favorites/export" in py_app and "/api/favorites/import" in py_app)
+    check("设置白名单含 library_columns/search_columns",
+          "library_columns" in py_app and "search_columns" in py_app)
+    check("桌面入口：NativeSplash + bind 端口探测",
+          "class NativeSplash" in open(os.path.join(ROOT, "desktop_app.py"), encoding="utf-8").read()
+          and "def _is_port_free" in open(os.path.join(ROOT, "desktop_app.py"), encoding="utf-8").read())
+    r = c.post("/api/read/1/progress", json={"page": 3})
+    check("POST /api/read/<id>/progress 已注册", r.status_code == 200 and r.get_json().get("success") is True)
+    r = c.get("/api/favorites/export")
+    check("GET /api/favorites/export 返回备份 JSON",
+          r.status_code == 200 and b"favoriteBooks" in r.data)
 
     # 分类树 UI 依赖的三个后端契约
     r = c.get("/api/categories?tree=1")

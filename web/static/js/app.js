@@ -385,6 +385,16 @@ function setAppConfig(key, value) {
   appConfigCache[key] = value;
 }
 
+/* v2.14：书架/搜索「每行列数」——0=自动（走断点自适应），2~8=固定列数 */
+function applyGridColumns(kind) {
+  const cfg = appConfigCache || {};
+  const n = Math.min(10, Math.max(0, parseInt(cfg[kind], 10) || 0));
+  const g = document.getElementById('comicGrid');
+  if (!g) return;
+  if (n >= 2) { g.classList.add('cols-fixed'); g.style.setProperty('--cols', n); }
+  else { g.classList.remove('cols-fixed'); g.style.removeProperty('--cols'); }
+}
+
 /* ── Toast ─────────────────────────────────────────────── */
 function toast(msg, type = 'info', ms = 2600) {
   const wrap = document.getElementById('toastWrap');
@@ -980,6 +990,7 @@ function renderCards(list, append = true, target = null, opts = {}) {
 
 function initSearch() {
   const grid = document.getElementById('comicGrid');
+  loadAppConfig().then(() => applyGridColumns('search_columns')).catch(() => {});
   const input = document.getElementById('searchInput');
   /* 发现态（未搜索：订阅新作 + 推荐）与搜索态（结果）互斥切换，
      对齐手机版 v6.1.0 起把「主页 + 搜索」合并成的发现页 */
@@ -1682,6 +1693,7 @@ const VIRTUAL_FAV = '__fav__';
 const VIRTUAL_UNCAT = '__uncat__';
 function initLibrary() {
   const grid = document.getElementById('comicGrid');
+  loadAppConfig().then(() => applyGridColumns('library_columns')).catch(() => {});
   const treeEl = document.getElementById('catTree');
   const nameEl = document.getElementById('currentCatName');
   const countEl = document.getElementById('currentCatCount');
@@ -2428,6 +2440,11 @@ function initSettings() {
       const validSorts = ['download_desc','download_asc','read_desc','read_asc','favorite_desc','favorite_asc'];
       shelfSortEl.value = validSorts.includes(String(s.shelf_sort || '')) ? s.shelf_sort : 'download_desc';
     }
+    // v2.14：书架/搜索每行列数
+    const shelfColsEl = document.getElementById('shelfColumns');
+    if (shelfColsEl) shelfColsEl.value = String(parseInt(s.library_columns, 10) || 0);
+    const searchColsEl = document.getElementById('searchColumns');
+    if (searchColsEl) searchColsEl.value = String(parseInt(s.search_columns, 10) || 0);
   });
 
   // 设置分组可折叠
@@ -2476,6 +2493,13 @@ function initSettings() {
     if (rct) payload.reader_chapter_toast = rct.checked ? '1' : '0';
     const ss = document.getElementById('shelfSort');
     if (ss) payload.shelf_sort = ss.value;
+    // v2.14：书架/搜索每行列数（0=自动）
+    const sc = document.getElementById('shelfColumns');
+    if (sc) payload.library_columns = sc.value;
+    const seCols = document.getElementById('searchColumns');
+    if (seCols) payload.search_columns = seCols.value;
+    setAppConfig('library_columns', sc ? sc.value : undefined);
+    setAppConfig('search_columns', seCols ? seCols.value : undefined);
     payload.theme = Theme.getPreferred();
     payload.theme_night_start = Theme._nightStart;
     payload.theme_night_end = Theme._nightEnd;
@@ -2540,7 +2564,37 @@ function initSettings() {
   bindSave('hideFinishedInSearch', 'change');
   bindSave('searchApplyBlocks', 'change');
   bindSave('shelfSort', 'change');
+  bindSave('shelfColumns', 'change');
+  bindSave('searchColumns', 'change');
   bindSave('smartAssociation', 'change');
+
+  // v2.14：收藏备份（导出/导入，格式跨端兼容手机端）
+  const favExportBtn = document.getElementById('favExportBtn');
+  if (favExportBtn) favExportBtn.onclick = async () => {
+    try {
+      favExportBtn.disabled = true;
+      const r = await api('POST', '/api/favorites/export');
+      if (r.success) toast(`已导出 ${r.data.count} 条收藏 → ${r.data.path}`, 'success', 5000);
+      else toast(r.message || '导出失败', 'error');
+    } catch (e) { toast('导出失败：' + e.message, 'error'); }
+    finally { favExportBtn.disabled = false; }
+  };
+  const favImportBtn = document.getElementById('favImportBtn');
+  const favImportFile = document.getElementById('favImportFile');
+  if (favImportBtn && favImportFile) {
+    favImportBtn.onclick = () => favImportFile.click();
+    favImportFile.onchange = async () => {
+      const f = favImportFile.files && favImportFile.files[0];
+      if (!f) return;
+      try {
+        const payload = JSON.parse(await f.text());
+        const r = await api('POST', '/api/favorites/import', payload);
+        if (r.success) toast(`导入完成：共 ${r.data.total} 条，新增收藏 ${r.data.added} 条`, 'success');
+        else toast(r.message || '导入失败', 'error');
+      } catch (e) { toast('导入失败：文件不是有效 JSON', 'error'); }
+      finally { favImportFile.value = ''; }
+    };
+  }
   bindSave('prefMinHits', 'change');
   bindSave('prefMaxTags', 'change');
   bindSave('searchStrategyHn', 'change');
@@ -2836,9 +2890,21 @@ function initReader() {
   let pages = [], current = 0, zoom = 1, currentChapter = '1';
   let currentImg = null; // 当前页 <img>，滚轮缩放时复用（不重建，避免重新发请求）
   const MIN_ZOOM = 0.1, MAX_ZOOM = 6;
-  // 滚轮行为：'zoom' = 滚轮缩放（进页面整页完整显示）；'scroll' = 滚轮上下翻动（默认显示约半页）
-  let wheelMode = Settings.get('reader_wheel_mode', 'zoom');
+  // 滚轮行为：'scroll' = 上下连排（多页一列，滚轮滚动=翻页，v2.14 默认）
+  //           'page' = 滑动翻页（页内先滑、到底/到顶翻页）；'zoom' = 滚轮缩放
+  let wheelMode = Settings.get('reader_wheel_mode', 'scroll');
   let viewInitialized = false; // 首屏是否已按模式默认适配（之后翻页保留用户缩放）
+  // ── v2.14 翻新增强：右侧滑轨 / 缩略图览 / 连排模式 ──
+  const rail = document.getElementById('readerRail');
+  const railFill = rail ? rail.querySelector('i') : null;
+  const grid = document.getElementById('readerGrid');
+  const overviewBtn = document.getElementById('overviewBtn');
+  let overview = false;        // 缩略图览模式开关
+  let colEls = [];             // 连排模式：每页 <img> 引用（与 pages 同序）
+  let colChapter = null;       // 连排列当前所属章节
+  let colAdvancing = false;    // 到底自动接下一章的防重入锁
+  let colPendingSeek = -1;     // 建列后待定位的页（-1 = 无）
+  let wheelAcc = 0, wheelLockUntil = 0;  // 滚轮累计阈值状态（防触控板小步误触）
   let chapters = [], currentChapterIndex = 0, chapterToastEnabled = true;
   // 章节预加载：key=chapterId, value={pages:[], promise, images:[]}
   let preloadCache = {};
@@ -2867,7 +2933,12 @@ function initReader() {
       stage.innerHTML = `<div class="empty"><div class="empty__icon"><i class="fas fa-circle-exclamation"></i></div><h3>该章节没有图片</h3><p>可能是下载未完成或目录异常</p></div>`;
       return;
     }
-    renderPage(0);
+    // v2.14 续读：从上次读到的页继续（连排模式先预载前几页拿宽高，定位才准）
+    const startPage = Math.min(Math.max(0, d.read_progress || 0), pages.length - 1);
+    if (startPage > 0) {
+      await preloadImages(currentChapter, pages.slice(0, Math.min(startPage + 2, pages.length))).catch(() => {});
+    }
+    renderPage(startPage);
   })();
 
   function updateChapterUI() {
@@ -2895,10 +2966,14 @@ function initReader() {
   }
 
   // ── 并发受限的图片预加载：一次最多 4 张并行，既快速备齐又不阻塞网络 ──
+  // v2.14：同时记录真实宽高（dims）——连排模式建列时用作占位比例，定位不漂移
   const PRELOAD_CONCUR = 4;
+  function cacheSlot(cid) {
+    return preloadCache[cid] || (preloadCache[cid] = { pages: [], images: new Set(), dims: {} });
+  }
   async function preloadImages(cid, pageList, count) {
     const slice = pageList.slice(0, Math.max(0, count));
-    const cache = preloadCache[cid] || (preloadCache[cid] = { pages: [], images: new Set() });
+    const cache = cacheSlot(cid);
     let cursor = 0;
     async function worker() {
       while (cursor < slice.length) {
@@ -2906,7 +2981,11 @@ function initReader() {
         if (cache.images.has(p)) continue;
         await new Promise(resolve => {
           const img = new Image();
-          img.onload = img.onerror = () => resolve();
+          img.onload = () => {
+            if (img.naturalWidth) cache.dims[p] = { w: img.naturalWidth, h: img.naturalHeight };
+            resolve();
+          };
+          img.onerror = () => resolve();
           img.src = `/api/comic/${jmId}/page/${p}?chapter=${encodeURIComponent(cid)}`;
           cache.images.add(p);
         });
@@ -2926,7 +3005,7 @@ function initReader() {
     const r = await api('GET', `/api/read/${jmId}/chapter/${encodeURIComponent(cid)}`);
     if (!r.success) return null;
     const cp = Array.isArray(r.data.current_chapter_pages) ? r.data.current_chapter_pages : [];
-    (preloadCache[cid] || (preloadCache[cid] = { pages: [], images: new Set() })).pages = cp;
+    cacheSlot(cid).pages = cp;
     return cp;
   }
 
@@ -2942,7 +3021,7 @@ function initReader() {
       const r = await api('GET', `/api/read/${jmId}/chapter/${encodeURIComponent(targetCid)}`);
       if (!r.success) { toast('章节加载失败', 'error'); return false; }
       pages = Array.isArray(r.data.current_chapter_pages) ? r.data.current_chapter_pages : [];
-      const slot = preloadCache[targetCid] || (preloadCache[targetCid] = { pages: [], images: new Set() });
+      const slot = cacheSlot(targetCid);
       slot.pages = pages;
       currentChapterIndex = index;
       currentChapter = targetCid;
@@ -3022,8 +3101,18 @@ function initReader() {
       return;
     }
     current = i;
+    // 览图模式：只更新高亮/页码，不加载大图
+    if (overview) {
+      document.getElementById('pageInfo').textContent = `${current + 1} / ${pages.length}`;
+      updateRail();
+      markOverviewCurrent();
+      return;
+    }
+    // 连排模式：定位到列内第 i 页
+    if (isCol()) { colSeek(i); return; }
     maybePreload(); // 翻页时检查是否预加载下一章
     maybePrefetchCurrent(); // 章节内后续 N 页后台预取，翻页零等待
+    saveProgressDebounced();
     stage.scrollTop = 0;
     stage.innerHTML = '';
     const spinner = document.createElement('div');
@@ -3054,6 +3143,7 @@ function initReader() {
     stage.appendChild(img);
     currentImg = img;
     document.getElementById('pageInfo').textContent = `${current + 1} / ${pages.length}`;
+    updateRail();
   }
 
   // 以 (focalX, focalY) 为锚点缩放：focalX/focalY 为相对 stage 视口的像素坐标；
@@ -3083,14 +3173,16 @@ function initReader() {
     zoomVal.textContent = Math.round(zoom * 100) + '%';
   }
 
-  // 按当前滚轮模式计算默认适配：zoom=整页完整显示(contain)；scroll=显示约半页(页高≈2×视口高)
+  // 按当前滚轮模式计算默认适配：zoom=整页完整显示(contain)；page=宽度铺满（滚轮页内滑、到底翻页）
   function fitView() {
     const img = currentImg;
     if (!img || !img.naturalWidth) return;
     const sw = stage.clientWidth, sh = stage.clientHeight;
     let targetW;
-    if (wheelMode === 'scroll') {
-      const r = (sh * 2) / img.naturalHeight; // 半页：页高≈2×视口高，滚轮可纵向翻动
+    if (wheelMode === 'page') {
+      targetW = sw; // 滑动翻页：宽度铺满视口
+    } else if (wheelMode === 'scroll') {
+      const r = (sh * 2) / img.naturalHeight; // 旧半页适配（连排模式下不会走到这里）
       targetW = img.naturalWidth * r;
     } else {
       const r = Math.min(sw / img.naturalWidth, sh / img.naturalHeight); // 整页 contain
@@ -3105,6 +3197,155 @@ function initReader() {
     zoomVal.textContent = Math.round(zoom * 100) + '%';
   }
 
+  /* ── v2.14 连排模式（scroll）：整章一列，滚轮原生滚动 = 翻页 ── */
+  function isCol() { return wheelMode === 'scroll'; }
+
+  function buildColumn() {
+    colChapter = currentChapter;
+    colEls = [];
+    colAdvancing = false;
+    stage.classList.add('is-col');
+    stage.innerHTML = '';
+    stage.style.setProperty('--pw', Math.round(stage.clientWidth * zoom) + 'px');
+    const cache = cacheSlot(currentChapter);
+    pages.forEach((p, i) => {
+      const wrap = document.createElement('div');
+      wrap.className = 'reader__page';
+      const img = document.createElement('img');
+      img.className = 'reader__img';
+      img.loading = 'lazy';
+      img.alt = `第 ${i + 1} 页`;
+      img.dataset.idx = String(i);
+      const dim = cache.dims[p];
+      // 占位比例：已知真实宽高用它，未知按 1.4 估（加载后自动纠正，防滚动漂移）
+      img.style.aspectRatio = dim ? (dim.w + '/' + dim.h) : '1.4';
+      img.onload = () => {
+        if (img.naturalWidth) {
+          cache.dims[p] = { w: img.naturalWidth, h: img.naturalHeight };
+          img.style.aspectRatio = '';
+        }
+      };
+      img.onerror = () => { wrap.classList.add('is-err'); };
+      img.src = `/api/comic/${jmId}/page/${p}?chapter=${encodeURIComponent(currentChapter)}`;
+      wrap.appendChild(img);
+      stage.appendChild(wrap);
+      colEls.push(img);
+    });
+    document.getElementById('pageInfo').textContent = `${current + 1} / ${pages.length}`;
+    updateRail();
+  }
+
+  function colSeek(i) {
+    i = Math.min(Math.max(0, i), Math.max(0, pages.length - 1));
+    if (colChapter !== currentChapter || !colEls.length) {
+      colPendingSeek = i;
+      buildColumn();
+      colApplyPendingSeek();
+      return;
+    }
+    const el = colEls[i];
+    if (el) {
+      stage.scrollTop = Math.max(0, el.offsetTop - 8);
+      colSync(i);   // 显式同步（滚动位置若恰好不变，scroll 事件不触发）
+    }
+  }
+
+  function colApplyPendingSeek() {
+    if (colPendingSeek < 0) return;
+    const i = colPendingSeek;
+    colPendingSeek = -1;
+    const el = colEls[i];
+    if (el) stage.scrollTop = Math.max(0, el.offsetTop - 8);
+    colSync(i);
+  }
+
+  function colSync(forceIdx) {
+    if (!pages.length) return;
+    let idx = (typeof forceIdx === 'number' && forceIdx >= 0)
+      ? forceIdx
+      : ReaderLogic.columnIndex(
+          stage.scrollTop, stage.clientHeight,
+          colEls.map(el => el.offsetTop),
+          colEls.map(el => el.offsetHeight || 0));
+    if (idx < 0) return;
+    if (idx !== current) {
+      current = idx;
+      maybePreload();
+      maybePrefetchCurrent();
+      saveProgressDebounced();
+      if (overview) markOverviewCurrent();
+    }
+    currentImg = colEls[current] || null;
+    document.getElementById('pageInfo').textContent = `${current + 1} / ${pages.length}`;
+    updateRail();
+    // 到底：非末章自动接下一章；末章标记读完
+    const atBottom = stage.scrollTop + stage.clientHeight >= stage.scrollHeight - 4;
+    if (atBottom && current >= pages.length - 1) {
+      if (currentChapterIndex < chapters.length - 1) {
+        if (!colAdvancing) {
+          colAdvancing = true;
+          loadChapter(currentChapterIndex + 1).then(ok => {
+            colAdvancing = false;
+            if (ok) { zoom = 1; viewInitialized = false; renderPage(0); }
+          });
+        }
+      } else {
+        markReadFinishedOnce();
+      }
+    }
+  }
+
+  function applyColZoom(newZoom) {
+    zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, newZoom));
+    stage.style.setProperty('--pw', Math.round(stage.clientWidth * zoom) + 'px');
+    zoomVal.textContent = Math.round(zoom * 100) + '%';
+  }
+
+  /* ── v2.14 右侧进度滑轨 ── */
+  function updateRail() {
+    if (!railFill || !pages.length) return;
+    railFill.style.height = (((current + 1) / pages.length) * 100).toFixed(2) + '%';
+  }
+
+  /* ── v2.14 缩略图览（一屏多页，点击定位） ── */
+  function renderOverview() {
+    if (!grid) return;
+    grid.hidden = false;
+    stage.hidden = true;
+    grid.innerHTML = ReaderLogic.buildOverviewHtml(jmId, currentChapter, pages, current);
+  }
+
+  function markOverviewCurrent() {
+    if (!grid) return;
+    const cells = grid.querySelectorAll('.reader__grid__cell');
+    for (let i = 0; i < cells.length; i++) {
+      cells[i].classList.toggle('is-cur', i === current);
+    }
+    const cur = grid.querySelector('.reader__grid__cell.is-cur');
+    if (cur && cur.scrollIntoView) cur.scrollIntoView({ block: 'nearest' });
+  }
+
+  function setOverview(on) {
+    overview = !!on;
+    if (overview) {
+      renderOverview();
+    } else {
+      if (grid) { grid.hidden = true; grid.innerHTML = ''; }
+      stage.hidden = false;
+    }
+    if (overviewBtn) overviewBtn.classList.toggle('on', overview);
+    if (rail) rail.hidden = overview;   // 览图模式下隐藏滑轨
+  }
+
+  /* ── v2.14 阅读进度防抖落库 ── */
+  let _saveTimer = null;
+  function saveProgressDebounced() {
+    clearTimeout(_saveTimer);
+    _saveTimer = setTimeout(() => {
+      api('POST', `/api/read/${jmId}/progress`, { page: current }).catch(() => {});
+    }, 800);
+  }
+
   document.getElementById('prevBtn').onclick = () => renderPage(current - 1);
   document.getElementById('nextBtn').onclick = () => renderPage(current + 1);
   const pageInfoEl = document.getElementById('pageInfo');
@@ -3117,13 +3358,48 @@ function initReader() {
   };
   if (prevChapBtn) prevChapBtn.onclick = () => { if (currentChapterIndex > 0) { loadChapter(currentChapterIndex - 1).then(() => renderPage(pages.length - 1)); } };
   if (nextChapBtn) nextChapBtn.onclick = () => { if (currentChapterIndex < chapters.length - 1) { loadChapter(currentChapterIndex + 1).then(() => renderPage(0)); } };
-  document.getElementById('zoomIn').onclick = () => applyZoom(zoom * 1.2);
-  document.getElementById('zoomOut').onclick = () => applyZoom(zoom / 1.2);
+  document.getElementById('zoomIn').onclick = () => { if (isCol()) applyColZoom(zoom * 1.2); else applyZoom(zoom * 1.2); };
+  document.getElementById('zoomOut').onclick = () => { if (isCol()) applyColZoom(zoom / 1.2); else applyZoom(zoom / 1.2); };
   document.getElementById('closeReader').onclick = () => { history.length > 1 ? history.back() : location.href = '/library'; };
-  // 滚动模式下滚轮用于翻动，缩放按钮无意义 → 隐藏
-  const _hideZoomBtns = wheelMode === 'scroll';
-  document.getElementById('zoomIn').style.display = _hideZoomBtns ? 'none' : '';
-  document.getElementById('zoomOut').style.display = _hideZoomBtns ? 'none' : '';
+
+  // ── v2.14 进度滑轨：按下即预览定位，拖动实时预览，松开跳页 ──
+  if (rail) {
+    let railSeeking = false, railTarget = null;
+    const railPreview = (clientY) => {
+      if (!pages.length) return;
+      const rect = rail.getBoundingClientRect();
+      const idx = ReaderLogic.railIndex(clientY, rect.top, rect.height, pages.length);
+      if (idx < 0) return;
+      railTarget = idx;
+      if (railFill) railFill.style.height = (((idx + 1) / pages.length) * 100).toFixed(2) + '%';
+      document.getElementById('pageInfo').textContent = `${idx + 1} / ${pages.length}`;
+    };
+    rail.addEventListener('mousedown', (e) => {
+      if (e.button !== 0 || overview) return;
+      e.preventDefault();
+      railSeeking = true;
+      railPreview(e.clientY);
+    });
+    document.addEventListener('mousemove', (e) => { if (railSeeking) railPreview(e.clientY); });
+    document.addEventListener('mouseup', () => {
+      if (!railSeeking) return;
+      railSeeking = false;
+      if (railTarget != null && railTarget !== current) renderPage(railTarget);
+      railTarget = null;
+    });
+  }
+
+  // ── v2.14 览图：切换 + 点击定位 ──
+  if (overviewBtn) overviewBtn.onclick = () => setOverview(!overview);
+  if (grid) {
+    grid.addEventListener('click', (e) => {
+      const cell = e.target.closest('[data-idx]');
+      if (!cell) return;
+      const idx = parseInt(cell.dataset.idx, 10);
+      setOverview(false);
+      renderPage(idx);
+    });
+  }
 
   // 阅读设置（预加载参数）
   const readerSettingsBtn = document.getElementById('readerSettings');
@@ -3150,8 +3426,9 @@ function initReader() {
         <div class="setting-row" style="flex-direction:column;align-items:stretch;gap:8px;margin-top:12px">
           <span>滚轮行为</span>
           <select id="rsWheelMode" style="padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface-2)">
+            <option value="scroll"${wheelMode === 'scroll' ? ' selected' : ''}>上下连排（多页一列，滚轮滚动=翻页）</option>
+            <option value="page"${wheelMode === 'page' ? ' selected' : ''}>滑动翻页（页内先滑、到底翻页）</option>
             <option value="zoom"${wheelMode === 'zoom' ? ' selected' : ''}>放大（滚轮缩放，整页默认完整显示）</option>
-            <option value="scroll"${wheelMode === 'scroll' ? ' selected' : ''}>上下滚动（滚轮翻动，默认显示约半页）</option>
           </select>
         </div>
       `,
@@ -3166,15 +3443,22 @@ function initReader() {
           Settings.set('reader_preload_threshold_pages', preloadSettings.thresholdPages);
           Settings.set('reader_preload_threshold_ratio', preloadSettings.thresholdRatio);
           Settings.set('reader_preload_count', preloadSettings.preloadCount);
-          // 滚轮行为：即时切换并重新适配当前页
+          // 滚轮行为：即时切换并按新模式重渲染当前页
           const newMode = document.getElementById('rsWheelMode').value;
           Settings.set('reader_wheel_mode', newMode);
           wheelMode = newMode;
-          viewInitialized = true; // 切换后按新默认重新适配（不保留旧缩放）
-          fitView();
-          const hideZoom = newMode === 'scroll';
-          document.getElementById('zoomIn').style.display = hideZoom ? 'none' : '';
-          document.getElementById('zoomOut').style.display = hideZoom ? 'none' : '';
+          viewInitialized = false;
+          if (newMode !== 'scroll') {
+            // 退出连排：清列状态，回单页渲染
+            stage.classList.remove('is-col');
+            colEls = []; colChapter = null;
+          }
+          stage.hidden = false;
+          if (grid) { grid.hidden = true; grid.innerHTML = ''; }
+          overview = false;
+          if (overviewBtn) overviewBtn.classList.remove('on');
+          if (rail) rail.hidden = false;
+          renderPage(current);
           toast('阅读设置已保存', 'success');
           c();
         }}
@@ -3199,27 +3483,58 @@ function initReader() {
     if (chapTrigger) { chapTrigger.addEventListener('mouseenter', openChap); chapTrigger.addEventListener('click', () => chapSide && chapSide.classList.toggle('open')); }
   }
 
-  // 滚轮行为按设置分支：zoom=以光标为锚点缩放；scroll=纵向翻动（阻止页面滚动/手势返回）
+  // 滚轮行为（v2.14）：动作判定交给 ReaderLogic 纯函数（可单测）——
+  //   scroll=连排：普通滚轮原生滚动（滚动即翻页）；Ctrl/右键+滚轮=缩放
+  //   page=滑动翻页：页内先滑，到底/到顶再翻页
+  //   zoom=以光标为锚点缩放
   stage.addEventListener('wheel', (e) => {
-    if (!currentImg) return;
-    e.preventDefault();
-    if (wheelMode === 'scroll') {
-      stage.scrollTop += e.deltaY;
+    // 连排：普通滚轮直接交给原生滚动（滚动即翻页），不拦截
+    if (isCol() && !(e.buttons & 2) && !e.ctrlKey) return;
+    // 连排 + 缩放（Ctrl+滚轮 / 右键+滚轮）
+    if (isCol()) {
+      e.preventDefault();
+      applyColZoom(zoom * (e.deltaY < 0 ? 1.15 : 1 / 1.15));
       return;
     }
+    if (!currentImg) return;
+    e.preventDefault();
     const rect = stage.getBoundingClientRect();
-    const fx = e.clientX - rect.left;
-    const fy = e.clientY - rect.top;
-    applyZoom(zoom * (e.deltaY < 0 ? 1.15 : 1 / 1.15), fx, fy);
+    const act = ReaderLogic.resolveWheelAction(
+      { deltaY: e.deltaY, buttons: e.buttons },
+      {
+        mode: wheelMode, acc: wheelAcc, lockUntil: wheelLockUntil, now: Date.now(),
+        atTop: stage.scrollTop <= 4,
+        atBottom: stage.scrollTop + stage.clientHeight >= stage.scrollHeight - 4,
+      });
+    wheelAcc = act.acc;
+    wheelLockUntil = act.lockUntil;
+    if (act.action === 'zoom') {
+      applyZoom(zoom * (e.deltaY < 0 ? 1.15 : 1 / 1.15), e.clientX - rect.left, e.clientY - rect.top);
+    } else if (act.action === 'scroll') {
+      stage.scrollTop += e.deltaY;
+    } else if (act.action === 'scrollPage') {
+      stage.scrollTop += act.dir * stage.clientHeight * 0.85;
+    } else if (act.action === 'flip') {
+      renderPage(current + act.dir);
+    }
   }, { passive: false });
+  // 右键仅用于配合滚轮缩放，屏蔽系统右键菜单
+  stage.addEventListener('contextmenu', (e) => e.preventDefault());
+  // 连排模式：滚动即翻页（当前页跟随视口，进度/滑轨/预读全部联动）
+  stage.addEventListener('scroll', () => {
+    if (isCol() && !overview && colEls.length) colSync();
+  }, { passive: true });
 
   document.addEventListener('keydown', e => {
     if (e.key === 'ArrowLeft') renderPage(current - 1);
     if (e.key === 'ArrowRight') renderPage(current + 1);
     // 放大后竖向平移阅读（Shift+滚轮不可用时的替代，避免与滚轮缩放冲突）
-    if (e.key === 'ArrowUp') { stage.scrollTop -= 120; e.preventDefault(); }
-    if (e.key === 'ArrowDown') { stage.scrollTop += 120; e.preventDefault(); }
-    if (e.key === 'Escape') document.getElementById('closeReader').click();
+    if (e.key === 'ArrowUp') { if (overview && grid) grid.scrollTop -= 120; else stage.scrollTop -= 120; e.preventDefault(); }
+    if (e.key === 'ArrowDown') { if (overview && grid) grid.scrollTop += 120; else stage.scrollTop += 120; e.preventDefault(); }
+    if (e.key === 'Escape') {
+      if (overview) setOverview(false);   // 先退出览图
+      else document.getElementById('closeReader').click();
+    }
   });
 }
 
@@ -4122,3 +4437,106 @@ function _dtBind(d) {
   on('block-author', () => blockAuthor(d.author));
   on('block-work', () => blockWork(d.jm_id, d.title));
 }
+
+/* ═══════════════════════════════════════════════════════
+   WebView2 全局拖拽补丁（v2.14 翻新）
+   背景：WebView2 的 HTML5 DnD 半残——dragstart 会触发、原生拖拽会接管
+   （期间 mousemove 被抑制），但 drop 永远不会送达 → 所有 draggable 功能
+   （标签 chips 拖入筛选 / 快捷标签排序 / 分类树拖拽归类调层级）全部失效。
+   对策：原生 dragstart 一律 preventDefault 灭掉；用 mousedown/mousemove/
+   mouseup 合成 dragstart / dragover / dragleave / drop / dragend
+   （bubbles 的 DragEvent + 可用的合成 DataTransfer）——
+   全应用既有拖拽监听器零改动直接工作。
+   ═══════════════════════════════════════════════════════ */
+(function () {
+  'use strict';
+  var THRESHOLD = 6;      // 起拖位移（px），小于此视为普通点击
+  var sim = null;         // {source, dt, started, x, y, ghost, lastHit}
+
+  function findDraggable(el) {
+    while (el && el !== document) {
+      if (el.getAttribute && el.getAttribute('draggable') === 'true') return el;
+      el = el.parentNode;
+    }
+    return null;
+  }
+
+  function makeDragEvent(type, x, y, dt) {
+    try {
+      return new DragEvent(type, {
+        bubbles: true, cancelable: true, composed: true,
+        clientX: x || 0, clientY: y || 0, dataTransfer: dt || null,
+      });
+    } catch (_) {
+      var ev = document.createEvent('CustomEvent');
+      ev.initCustomEvent(type, true, true, null);
+      ev.dataTransfer = dt || null;
+      return ev;
+    }
+  }
+
+  function cleanup(st) {
+    if (st && st.ghost) st.ghost.remove();
+    document.body.classList.remove('jm-dragging');
+  }
+
+  // 原生 DnD 一律灭掉：WebView2 半残会留僵死残影，真浏览器里与鼠标模拟双路打架
+  document.addEventListener('dragstart', function (e) {
+    e.preventDefault();
+  }, true);
+
+  document.addEventListener('mousedown', function (e) {
+    if (e.button !== 0) return;
+    var src = findDraggable(e.target);
+    if (!src) return;
+    sim = { source: src, dt: null, started: false, x: e.clientX, y: e.clientY, ghost: null, lastHit: null };
+  }, true);
+
+  document.addEventListener('mousemove', function (e) {
+    if (!sim) return;
+    if (!sim.started) {
+      if (Math.abs(e.clientX - sim.x) + Math.abs(e.clientY - sim.y) < THRESHOLD) return;
+      // 起拖：合成 dragstart，让既有监听器把载荷 setData 进我们的 dt
+      //（_dragData 之类的模块级状态也会在此时被置好）
+      sim.started = true;
+      try { sim.dt = new DataTransfer(); } catch (_) { sim.dt = null; }
+      sim.source.dispatchEvent(makeDragEvent('dragstart', e.clientX, e.clientY, sim.dt));
+      var rect = sim.source.getBoundingClientRect();
+      var g = sim.source.cloneNode(true);
+      g.style.cssText += ';position:fixed;z-index:99999;pointer-events:none;margin:0;opacity:.85;' +
+        'width:' + rect.width + 'px;box-shadow:0 10px 30px rgba(0,0,0,.28);' +
+        'left:' + (e.clientX + 12) + 'px;top:' + (e.clientY + 10) + 'px;';
+      document.body.appendChild(g);
+      sim.ghost = g;
+      document.body.classList.add('jm-dragging');
+    }
+    e.preventDefault();
+    if (sim.ghost) {
+      sim.ghost.style.left = (e.clientX + 12) + 'px';
+      sim.ghost.style.top = (e.clientY + 10) + 'px';
+    }
+    var hit = document.elementFromPoint(e.clientX, e.clientY);
+    if (hit !== sim.lastHit) {
+      if (sim.lastHit) sim.lastHit.dispatchEvent(makeDragEvent('dragleave', e.clientX, e.clientY, sim.dt));
+      sim.lastHit = hit;
+    }
+    if (hit) hit.dispatchEvent(makeDragEvent('dragover', e.clientX, e.clientY, sim.dt));
+  }, true);
+
+  document.addEventListener('mouseup', function (e) {
+    if (!sim) return;
+    var st = sim;
+    sim = null;
+    if (!st.started) return;   // 未超过阈值 = 普通点击，放行
+    e.preventDefault();
+    var el = document.elementFromPoint(e.clientX, e.clientY);
+    if (el) el.dispatchEvent(makeDragEvent('drop', e.clientX, e.clientY, st.dt));
+    st.source.dispatchEvent(makeDragEvent('dragend', e.clientX, e.clientY, st.dt));
+    cleanup(st);
+  }, true);
+
+  // 拖拽中途焦点丢失（切窗/拖出窗口）也要清场
+  window.addEventListener('blur', function () {
+    if (sim) { cleanup(sim); sim = null; }
+  });
+})();

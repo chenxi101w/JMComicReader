@@ -20,6 +20,9 @@
         <button class="d-icon-btn" id="readerSettings" title="阅读设置">
           <i class="fas fa-gear"></i>
         </button>
+        <button class="d-icon-btn" id="overviewBtn" title="缩略图览：一屏多页，点击定位">
+          <i class="fas fa-table-cells-large"></i>
+        </button>
         <button class="d-icon-btn" id="zoomOut" title="缩小">
           <i class="fas fa-magnifying-glass-minus"></i>
         </button>
@@ -35,6 +38,12 @@
       <div class="reader-page" id="readerPageSkel" aria-hidden="true" style="display:none">01</div>
       <div class="empty"><div class="empty__icon" style="width:60px;height:60px;border-radius:18px;background:var(--d-grad-soft);display:grid;place-items:center;margin:0 auto 14px;color:var(--accent);font-size:24px"><i class="fas fa-spinner fa-spin"></i></div><h3>打开中…</h3></div>
     </div>
+
+    {# ── 缩略图览（一屏多页，点击定位） ── #}
+    <div class="reader__grid" id="readerGrid" hidden></div>
+
+    {# ── 右侧进度滑轨（点按 / 拖动定位页） ── #}
+    <div class="reader__rail" id="readerRail" title="点按 / 拖动定位页"><i></i></div>
 
     {# ── 章节侧栏（右侧弹出） ── #}
     <aside class="reader__chap-side" id="chapSide" style="display:none;right:0;left:auto;top:64px;bottom:0;width:320px;border-radius:16px 0 0 0;border-left:1px solid var(--d-border);background:var(--d-bg);box-shadow:-12px 0 40px rgba(26,32,48,.08)">

@@ -54,7 +54,7 @@
     }
   })();
   </script>
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=65">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=66">
   <link rel="icon" id="appFavicon" href="{{ url_for('static', filename='img/icons/default.png') }}">
   <script>
     /* 应用图标防闪：首屏前按已有选择切换侧边栏 logo 与 favicon（无则默认） */
@@ -99,7 +99,9 @@
   <div class="toast-wrap" id="toastWrap"></div>
   <div id="modalRoot"></div>
 
-  <script src="{{ url_for('static', filename='js/app.js') }}?v=65"></script>
+  <script src="{{ url_for('static', filename='js/reader-logic.js') }}?v=66"></script>
+  <script src="{{ url_for('static', filename='js/library-drag-logic.js') }}?v=66"></script>
+  <script src="{{ url_for('static', filename='js/app.js') }}?v=66"></script>
   <script>
     // 新 UI 的小钩子：顶栏快捷跳转 & 主题按钮复用 app.js 中已有的 toggleTheme()
     (function () {

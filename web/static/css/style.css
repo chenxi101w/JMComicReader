@@ -2341,3 +2341,58 @@ body.app-desktop.reader-mode .d-page-header { display: none; }
 body.app-desktop.reader-mode .d-nav-bar { display: none; }
 body.app-desktop.reader-mode .d-content { padding-bottom: 0; }
 body.app-desktop.reader-mode .d-shell { max-width: none; }
+
+/* ═══════════ v2.14 阅读器翻新：连排 / 滑轨 / 览图 ═══════════ */
+/* 阅读页改固定视口布局：topbar/bottom 常驻，stage 内部滚动（连排/滑轨的前提） */
+body.reader-mode { overflow: hidden; height: 100vh; }
+.reader-shell { height: 100vh; }
+.reader-shell__topbar { position: static; }
+.reader-shell__bottom { position: static; }
+.reader-shell__stage { overflow: auto; padding: 16px 24px 40px; }
+
+/* 连排模式：整章多页纵向排一列，滚轮原生滚动 = 翻页 */
+.reader__page { width: var(--pw, 100%); margin: 0 auto 6px; line-height: 0; }
+.reader-shell__stage.is-col { display: block; padding: 8px 24px 40px; }
+.reader-shell__stage.is-col .reader__img {
+  position: static; display: block; width: var(--pw, 100%);
+  max-width: none; max-height: none; margin: 0 auto; background: #e6e8ef;
+}
+.reader__page.is-err { min-height: 120px; }
+
+/* 右侧进度滑轨（点按 / 拖动定位页） */
+.reader__rail {
+  position: absolute; right: 6px; top: 70px; bottom: 76px;
+  width: 6px; border-radius: 3px;
+  background: color-mix(in srgb, var(--d-text-3, #889) 28%, transparent);
+  cursor: pointer; z-index: 30; transition: width .12s;
+}
+.reader__rail:hover { width: 9px; }
+.reader__rail i {
+  display: block; width: 100%; height: 0%;
+  border-radius: 3px; background: var(--d-grad-primary, var(--accent, #4f8cff));
+}
+
+/* 缩略图览（一屏多页，点击定位） */
+.reader__grid {
+  position: absolute; top: 64px; left: 0; right: 0; bottom: 0;
+  overflow-y: auto; z-index: 25;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 12px; padding: 14px 20px; background: var(--d-bg-2);
+}
+.reader__grid__cell {
+  position: relative; border-radius: 10px; overflow: hidden;
+  border: 2px solid transparent; cursor: pointer; background: #e6e8ef;
+}
+.reader__grid__cell img { width: 100%; display: block; }
+.reader__grid__cell span {
+  position: absolute; right: 6px; bottom: 4px; font-size: 11px; font-weight: 700;
+  color: #fff; background: rgba(0,0,0,.55); padding: 1px 6px; border-radius: 8px;
+}
+.reader__grid__cell.is-cur { border-color: var(--accent, #4f8cff); }
+.reader__grid__cell.is-cur span { background: var(--accent, #4f8cff); }
+
+/* 拖拽模拟期间禁选中文本 */
+body.jm-dragging, body.jm-dragging * { user-select: none !important; }
+
+/* v2.14：书架/搜索每行列数（设置→外观/搜索；0=自动断点自适应） */
+.d-comic-grid.cols-fixed { grid-template-columns: repeat(var(--cols, 5), 1fr); }

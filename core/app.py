@@ -100,12 +100,22 @@ def inject_app_version():
 
 # ─── 服务初始化 ────────────────────────────────────────────
 
-from core.services.jm_crawler import JMCrawler
+from core.services.jm_crawler import DownloadCancelled, get_jm_crawler
 from core.services.download_manager import DownloadManager
 from core.services.comic_manager import ComicManager
 
 init_database()
-jm_crawler = JMCrawler()
+
+
+class _CrawlerProxy:
+    """惰性转发：首次访问才构造 JMCrawler（构造要同步加载封面/详情缓存大 JSON，
+    放在 import 阶段会拖慢启动；对齐轻量版的惰性单例 + desktop_app 预热）。"""
+
+    def __getattr__(self, name):
+        return getattr(get_jm_crawler(), name)
+
+
+jm_crawler = _CrawlerProxy()
 download_manager = DownloadManager()
 comic_manager = ComicManager()
 
@@ -244,33 +254,89 @@ def trigger_sub_poll_route():
         return jsonify({"success": False, "message": str(e)})
 
 # 线程安全的下载进度
-_dl_lock = threading.Lock()
-_dl_progress: dict = {}
+class _DownloadRegistry:
+    """进行中下载的内存状态（单例 _registry），线程安全。
 
+    状态机：starting → preparing → downloading → processing → completed
+            （任意阶段可转 cancelled / error；终态短暂保留供前端展示后移出）
+    """
 
-def _update_progress(download_id: str, progress: int, status: str, message: str) -> None:
-    with _dl_lock:
-        if download_id in _dl_progress:
-            _dl_progress[download_id].update(
-                {"progress": progress, "status": status, "message": message}
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._progress: dict = {}   # download_id -> 前端轮询用的进度记录
+        self._events: dict = {}     # download_id -> 取消信号 Event
+
+    def register(self, download_id: str, jm_id: int, title: str) -> threading.Event:
+        """登记新任务并返回其取消事件。"""
+        evt = threading.Event()
+        with self._lock:
+            self._events[download_id] = evt
+            self._progress[download_id] = {
+                "progress": 0, "status": "starting", "message": "开始下载...",
+                "jm_id": jm_id, "title": title,
+                "done": 0, "total": 0, "bytes": 0, "images": 0,
+            }
+        return evt
+
+    def update(self, download_id: str, progress: int, status: str, message: str,
+               extra: dict = None) -> None:
+        """更新进度（extra 里 done/total/bytes/images 会被透传，供前端展示）。"""
+        with self._lock:
+            rec = self._progress.get(download_id)
+            if rec is None:
+                return
+            rec["progress"] = progress
+            rec["status"] = status
+            rec["message"] = message
+            if isinstance(extra, dict):
+                for key in ("done", "total", "bytes", "images"):
+                    if key in extra:
+                        try:
+                            rec[key] = int(extra[key])
+                        except (TypeError, ValueError):
+                            pass
+
+    def is_downloading(self, jm_id: int) -> bool:
+        """该漫画是否已有进行中的任务（防重复下载：同一本被点两次会起两个任务）。"""
+        with self._lock:
+            return any(
+                r.get("jm_id") == jm_id and r.get("status") not in
+                ("completed", "error", "cancelled")
+                for r in self._progress.values()
             )
 
+    def snapshot(self) -> dict:
+        with self._lock:
+            return dict(self._progress)
 
-def _cleanup_progress(download_id: str) -> None:
-    """下载完成后从"进行中"内存列表移除（历史已写入）。"""
-    with _dl_lock:
-        _dl_progress.pop(download_id, None)
+    def get(self, download_id: str):
+        with self._lock:
+            return self._progress.get(download_id)
+
+    def cancel(self, download_id: str):
+        """置 cancelled 并返回 (是否存在, 取消事件)。"""
+        with self._lock:
+            rec = self._progress.get(download_id)
+            if rec is None:
+                return False, None
+            if rec.get("status") != "cancelled":
+                rec["status"] = "cancelled"
+                rec["message"] = "已取消"
+            return True, self._events.get(download_id)
+
+    def discard(self, download_id: str) -> None:
+        """前端手动移除记录（DELETE 端点）。"""
+        with self._lock:
+            self._progress.pop(download_id, None)
+
+    def remove(self, download_id: str) -> None:
+        """任务结束后移出列表（历史已落库），并清掉取消事件。"""
+        with self._lock:
+            self._progress.pop(download_id, None)
+            self._events.pop(download_id, None)
 
 
-def _comic_title(jm_id: int) -> str:
-    """已下载漫画的标题（取不到时退化为 JM-<id>）。直接单条查询，不 materialize 全列表。"""
-    meta = comic_manager.get_comic_meta(jm_id) or {}
-    return meta.get("title") or f"JM-{jm_id}"
-
-
-# ─── 下载并发控制 ────────────────────────────────────────────
-# 全局线程池：限制同时进行的下载任务数（对应设置项 max_concurrent_downloads）。
-# 单本与批量下载都提交到这里，天然保证总并发不超过上限，避免无限制起线程同时打 JM。
+_registry = _DownloadRegistry()
 _dl_executor = None
 
 
@@ -286,23 +352,65 @@ def _get_dl_executor():
     return _dl_executor
 
 
-def _run_download_task(jm_id, comic_info, download_id, category_ids):
-    """下载任务实体（被线程池调用）。成功 / 失败都负责进度清理。"""
+def _downloaded_real_file_count(jm_id: int) -> int:
+    """DownloadedComics 中该本的真实文件数（0 = 不存在或空壳）。"""
     try:
-        download_manager.download_comic(
+        d = comic_manager._find_downloaded_dir(jm_id)
+    except Exception:
+        d = None
+    if not d or not os.path.isdir(d):
+        return 0
+    n = 0
+    for _root, _dirs, files in os.walk(d):
+        n += len(files)
+    return n
+
+
+def _tempcache_file_count(jm_id: int) -> int:
+    """TempCache 中该本的残留文件数（>0 = 有已下部分，可续下）。"""
+    d = os.path.join(BASE_DIR, "TempCache", "downloads", str(jm_id))
+    if not os.path.isdir(d):
+        return 0
+    n = 0
+    for _root, _dirs, files in os.walk(d):
+        n += len(files)
+    return n
+
+
+def _cancel_download_cleanup(download_id: str, jm_id: int, title: str) -> None:
+    """取消下载：只停任务并记录历史——**保留 TempCache 已下部分供续下**。"""
+    try:
+        add_download_history(jm_id, title or "", "cancelled", "已取消（已下部分保留，可续下）")
+    except Exception:
+        pass
+    _registry.update(download_id, 0, "cancelled", "已取消（可续下）")
+    threading.Timer(3.0, _registry.remove, args=(download_id,)).start()
+
+
+def _run_download_task(jm_id, comic_info, download_id, category_ids, cancel_event):
+    """下载任务实体（被线程池调用）。成功 / 失败 / 取消都负责进度清理与历史落库。"""
+    try:
+        ok = download_manager.download_comic(
             jm_id, comic_info,
-            lambda p, s, m: _update_progress(download_id, p, s, m),
+            lambda p, s, m, e=None: _registry.update(download_id, p, s, m, e),
+            cancel_check=(lambda: cancel_event.is_set()) if cancel_event else None,
         )
+        if not ok:
+            add_download_history(jm_id, comic_info.get("title", ""), "failed", "下载未完成")
+            _registry.update(download_id, 0, "error", "下载未完成")
+            threading.Timer(30.0, _registry.remove, args=(download_id,)).start()
+            return
         if category_ids:
             set_comic_categories(jm_id, category_ids)
         add_download_history(jm_id, comic_info.get("title", ""), "completed")
-        # 短暂保留以便前端提示，随后移出"进行中"列表
-        threading.Timer(2.0, _cleanup_progress, args=(download_id,)).start()
+        # 短暂保留以便前端提示，随后移出「进行中」列表
+        threading.Timer(2.0, _registry.remove, args=(download_id,)).start()
+    except DownloadCancelled:
+        _cancel_download_cleanup(download_id, jm_id, comic_info.get("title", ""))
     except Exception as e:
-        _update_progress(download_id, 0, "error", str(e))
+        _registry.update(download_id, 0, "error", str(e))
         add_download_history(jm_id, comic_info.get("title", ""), "failed", str(e))
-        # 失败任务同样延时清理，避免无限残留（保留 30s 供前端提示错误）
-        threading.Timer(30.0, _cleanup_progress, args=(download_id,)).start()
+        threading.Timer(30.0, _registry.remove, args=(download_id,)).start()
 
 
 # ─── 页面路由 ──────────────────────────────────────────────
@@ -895,8 +1003,76 @@ def recommend():
 
 # ─── 封面 API ──────────────────────────────────────────────
 
+def _cover_mimetype(path: str) -> str:
+    """按文件头检测封面真实 MIME（禁漫 CDN 会按 UA 协商返回 webp）。"""
+    try:
+        with open(path, "rb") as f:
+            head = f.read(12)
+        if head[:2] == b"\xff\xd8":
+            return "image/jpeg"
+        if head[:4] == b"RIFF" and head[8:12] == b"WEBP":
+            return "image/webp"
+        if head[:8] == b"\x89PNG\r\n\x1a\n":
+            return "image/png"
+    except Exception:
+        pass
+    return "image/jpeg"
+
+
+# 封面失败负缓存：拉不到的本在 TTL 内直接返回占位图（避免整页封面被
+# 6~8 个域 × 6s 的全轮询拖垮）
+_cover_fail_until: dict = {}
+_COVER_FAIL_TTL = 600
+_NO_COVER_PATH = os.path.join(STATIC_DIR, "img", "no_cover.svg")
+
+
+def _send_no_cover():
+    """封面兜底占位图（200，前端 img 永不破图）。"""
+    return send_file(_NO_COVER_PATH, mimetype="image/svg+xml")
+
+
+def _serve_cover(jm_id: int):
+    """封面统一出口：缓存 → 负缓存 → 实时拉取 → 占位图兜底。
+
+    拉取成功时：落 TempCache 缓存 + **顺手补书目录 cover.jpg**（历史缺封面
+    的已下载本自愈）。任何失败路径都返回占位图，绝不让前端出现破图。
+    """
+    cache_path = os.path.join(TEMP_CACHE_DIR, f"cover_{jm_id}.jpg")
+    try:
+        if os.path.exists(cache_path) and os.path.getsize(cache_path) > 0:
+            return send_file(cache_path, mimetype=_cover_mimetype(cache_path))
+    except Exception:
+        pass
+    if _cover_fail_until.get(jm_id, 0) > time.time():
+        return _send_no_cover()
+    try:
+        crawler = get_jm_crawler()
+        url = crawler.get_cover_url(jm_id)
+        data = crawler.fetch_cover_bytes(jm_id, url)
+        if data:
+            tmp = cache_path + ".tmp"
+            with open(tmp, "wb") as f:
+                f.write(data)
+            os.replace(tmp, cache_path)
+            _cover_fail_until.pop(jm_id, None)
+            # 书目录自愈：该本已在库但缺 cover.jpg 时补齐
+            try:
+                d = comic_manager._find_downloaded_dir(jm_id)
+                if d and not os.path.exists(os.path.join(d, "cover.jpg")):
+                    with open(os.path.join(d, "cover.jpg"), "wb") as f:
+                        f.write(data)
+            except Exception:
+                pass
+            return send_file(cache_path, mimetype=_cover_mimetype(cache_path))
+    except Exception as e:
+        print(f"封面拉取失败 {jm_id}: {e}")
+    _cover_fail_until[jm_id] = time.time() + _COVER_FAIL_TTL
+    return _send_no_cover()
+
+
 @app.route("/api/cover/<int:jm_id>")
 def get_comic_cover(jm_id):
+    """兼容旧前端的封面信息接口（返回 JSON URL）。"""
     try:
         meta = comic_manager.get_comic_meta(jm_id)
         if meta and meta.get("cover_path") and os.path.exists(meta["cover_path"]):
@@ -906,21 +1082,35 @@ def get_comic_cover(jm_id):
             return jsonify({"success": True, "data": {
                 "cover": cover_url,
                 "cover_local": os.path.join(TEMP_CACHE_DIR, f"cover_{jm_id}.jpg"),
+                "proxy": f"/api/cover/proxy/{jm_id}",
             }})
         return jsonify({"success": False, "message": "未找到封面"})
     except Exception as e:
         return jsonify({"success": False, "message": f"获取封面失败: {str(e)}"})
 
 
+@app.route("/api/cover/proxy/<int:jm_id>")
+def cover_proxy(jm_id):
+    """远程封面的本地代理（服务端拉取 + 磁盘缓存 + 占位兜底）。
+
+    img 直连部分禁漫 CDN 域可能被网络环境阻断——服务端走配置好的
+    代理/session + 域名轮换，前端永不破图。
+    """
+    return _serve_cover(jm_id)
+
+
 @app.route("/api/cover/downloaded/<int:jm_id>")
 def get_downloaded_comic_cover(jm_id):
+    """本地已下载漫画的封面图：书目录 cover.jpg → 缓存 → 实时拉取(自愈) → 占位。"""
     try:
-        meta = comic_manager.get_comic_meta(jm_id)
-        if meta and meta.get("cover_path") and os.path.exists(meta["cover_path"]):
-            return send_file(meta["cover_path"])
-        return jsonify({"success": False, "message": "封面不存在"})
-    except Exception as e:
-        return jsonify({"success": False, "message": f"获取封面失败: {str(e)}"})
+        comic_dir = comic_manager._find_downloaded_dir(jm_id)
+        if comic_dir:
+            cover = os.path.join(comic_dir, "cover.jpg")
+            if os.path.exists(cover):
+                return send_file(cover)
+    except Exception:
+        pass
+    return _serve_cover(jm_id)
 
 
 # ─── 下载 API ──────────────────────────────────────────────
@@ -930,7 +1120,19 @@ def download_comic(jm_id):
     """下载单本漫画（可选分类）。"""
     try:
         if comic_manager.is_comic_downloaded(jm_id):
-            return jsonify({"success": False, "message": "该漫画已下载", "downloaded": True})
+            # 未完成判定（续下前提）：在库文件数 < TempCache 残留数 → 空壳/半壳，
+            # 清壳放行续下；在库文件 >= 残留（正常已下载）才拦「已下载」。
+            dc_files = _downloaded_real_file_count(jm_id)
+            tc_files = _tempcache_file_count(jm_id)
+            if dc_files > tc_files and dc_files > 0:
+                return jsonify({"success": False, "message": "该漫画已下载", "downloaded": True})
+            if dc_files > 0:
+                try:
+                    comic_manager.delete_completely(jm_id)   # 清不完整残渣（TempCache 保留供续下）
+                except Exception:
+                    pass
+        if _registry.is_downloading(jm_id):
+            return jsonify({"success": False, "message": "该漫画正在下载中，请勿重复提交", "downloading": True})
 
         comic_info = jm_crawler.get_comic_info(jm_id)
         if not comic_info:
@@ -939,13 +1141,8 @@ def download_comic(jm_id):
         category_ids = _parse_category_ids(request)
 
         download_id = f"{jm_id}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
-        with _dl_lock:
-            _dl_progress[download_id] = {
-                "progress": 0, "status": "starting", "message": "开始下载...",
-                "jm_id": jm_id, "title": comic_info.get("title", ""),
-            }
-
-        _get_dl_executor().submit(_run_download_task, jm_id, comic_info, download_id, list(category_ids))
+        cancel_event = _registry.register(download_id, jm_id, comic_info.get("title", ""))
+        _get_dl_executor().submit(_run_download_task, jm_id, comic_info, download_id, list(category_ids), cancel_event)
         return jsonify({"success": True, "download_id": download_id, "message": "下载任务已启动"})
     except Exception as e:
         return jsonify({"success": False, "message": f"下载失败: {str(e)}"})
@@ -977,6 +1174,9 @@ def download_batch():
             if comic_manager.is_comic_downloaded(jm_id):
                 results.append({"jm_id": jm_id, "status": "skipped", "message": "已下载"})
                 continue
+            if _registry.is_downloading(jm_id):
+                results.append({"jm_id": jm_id, "status": "skipped", "message": "已在下载中"})
+                continue
 
             comic_info = jm_crawler.get_comic_info(jm_id)
             if not comic_info:
@@ -984,13 +1184,8 @@ def download_batch():
                 continue
 
             download_id = f"{jm_id}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
-            with _dl_lock:
-                _dl_progress[download_id] = {
-                    "progress": 0, "status": "starting", "message": "开始下载...",
-                    "jm_id": jm_id, "title": comic_info.get("title", ""),
-                }
-
-            ex.submit(_run_download_task, jm_id, comic_info, download_id, list(category_ids))
+            cancel_event = _registry.register(download_id, jm_id, comic_info.get("title", ""))
+            ex.submit(_run_download_task, jm_id, comic_info, download_id, list(category_ids), cancel_event)
             results.append({"jm_id": jm_id, "status": "downloading", "download_id": download_id})
 
         return jsonify({"success": True, "data": results})
@@ -1016,36 +1211,53 @@ def _parse_category_ids(req) -> list:
 
 @app.route("/api/download/progress/<download_id>")
 def get_download_progress(download_id):
-    with _dl_lock:
-        if download_id in _dl_progress:
-            return jsonify({"success": True, "data": _dl_progress[download_id]})
+    rec = _registry.get(download_id)
+    if rec is not None:
+        return jsonify({"success": True, "data": rec})
     return jsonify({"success": False, "message": "下载任务不存在"})
 
 
 @app.route("/api/download/progress/<download_id>", methods=["DELETE"])
 def delete_download_progress(download_id):
     """从内存中的进行中列表移除一个任务（失败/取消/卡住时清理用）。"""
-    with _dl_lock:
-        if download_id in _dl_progress:
-            del _dl_progress[download_id]
-            return jsonify({"success": True, "message": "已移除"})
+    if _registry.get(download_id) is not None:
+        _registry.discard(download_id)
+        return jsonify({"success": True, "message": "已移除"})
     return jsonify({"success": False, "message": "任务不存在"})
 
 
 @app.route("/api/download/progress")
 def get_all_progress():
-    with _dl_lock:
-        return jsonify({"success": True, "data": dict(_dl_progress)})
+    return jsonify({"success": True, "data": _registry.snapshot()})
+
+
+@app.route("/api/download/cancel/<download_id>", methods=["POST"])
+def cancel_download(download_id):
+    """取消下载：立即置 cancelled（UI 马上变已取消态、可立即重下同本）。
+
+    取消语义 = 保留 TempCache 已下部分供续下；真正退出前的收尾由下载线程的
+    DownloadCancelled → _cancel_download_cleanup 负责（对已移除记录是 no-op）。
+    """
+    exists, evt = _registry.cancel(download_id)
+    if not exists:
+        return jsonify({"success": False, "message": "任务不存在或已完成"})
+    if evt:
+        evt.set()
+    threading.Timer(3.0, _registry.remove, args=(download_id,)).start()
+    return jsonify({"success": True, "message": "已取消"})
 
 
 @app.route("/api/download/history")
 def get_download_history_route():
     try:
         history = get_download_history(50)
-        # 标记每条记录对应的本地文件是否还存在
         for item in history:
             jm_id = item.get("jm_id")
             item["files_exist"] = comic_manager.is_comic_downloaded(jm_id) if jm_id else False
+            # 可续下：未在库 + TempCache 有已下部分（续下按钮显示条件）
+            item["resumable"] = bool(
+                jm_id and not item["files_exist"] and _tempcache_file_count(jm_id) > 0
+            )
         return jsonify({"success": True, "data": history})
     except Exception as e:
         return jsonify({"success": False, "message": str(e)})
@@ -1069,6 +1281,99 @@ def clear_download_history_route():
         return jsonify({"success": True, "data": {"deleted": n}, "message": f"已清空 {n} 条记录"})
     except Exception as e:
         return jsonify({"success": False, "message": str(e)})
+
+
+# ─── 收藏备份（导出 / 导入，格式兼容手机端「JM 轻量版」，可跨端导入）───
+
+def _favorites_payload() -> Dict:
+    """构造收藏备份 JSON（零网络：detail_cache → 已下载表补元数据）。"""
+    ids = get_favorite_ids()
+    crawler = get_jm_crawler()
+    dcache = getattr(crawler, "detail_cache", {}) or {}
+    # 已下载表的元数据兜底（一次查询）
+    meta = {}
+    if ids:
+        try:
+            from core.models.database import _get_conn as _db_conn
+            marks = ",".join("?" for _ in ids)
+            for r in _db_conn().execute(
+                    f"SELECT jm_id, title, author FROM downloaded_comics WHERE jm_id IN ({marks})",
+                    ids).fetchall():
+                meta[int(r["jm_id"])] = {"title": r["title"], "author": r["author"]}
+        except Exception:
+            pass
+    books = []
+    for jm_id in ids:
+        info = dcache.get(str(jm_id)) or {}
+        m = meta.get(jm_id) or {}
+        books.append({
+            "id": jm_id,
+            "title": info.get("title") or m.get("title") or "",
+            "author": info.get("author") or m.get("author") or "",
+            "coverUrl": info.get("cover") or "",
+        })
+    return {
+        "app": "jmcomicreader",
+        "type": "favorites",
+        "version": 1,
+        "exportedAt": int(time.time() * 1000),
+        "favoriteBooks": books,
+        "favTags": [],
+        "source": "jmcomicreader",
+    }
+
+
+@app.route("/api/favorites/export", methods=["POST"])
+def favorites_export_route():
+    """导出收藏到 UserData/exports/（JSON，兼容手机端收藏备份）。"""
+    try:
+        payload = _favorites_payload()
+        export_dir = os.path.join(BASE_DIR, "UserData", "exports")
+        os.makedirs(export_dir, exist_ok=True)
+        filename = "jm_favorites_%s.json" % datetime.now().strftime("%Y%m%d_%H%M%S")
+        path = os.path.join(export_dir, filename)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
+        return jsonify({"success": True, "data": {"path": path, "count": len(payload["favoriteBooks"])}})
+    except Exception as e:
+        return jsonify({"success": False, "message": f"导出失败: {e}"})
+
+
+@app.route("/api/favorites/export", methods=["GET"])
+def favorites_export_raw_route():
+    """导出收藏 JSON（浏览器直接下载用）。"""
+    payload = _favorites_payload()
+    body = json.dumps(payload, ensure_ascii=False, indent=2)
+    filename = "jm_favorites_%s.json" % datetime.now().strftime("%Y%m%d")
+    return app.response_class(
+        body, mimetype="application/json",
+        headers={"Content-Disposition": "attachment; filename=%s" % filename},
+    )
+
+
+@app.route("/api/favorites/import", methods=["POST"])
+def favorites_import_route():
+    """导入收藏备份（兼容手机端导出；已收藏的幂等跳过）。"""
+    try:
+        data = request.get_json(silent=True) or {}
+        books = data.get("favoriteBooks")
+        if not isinstance(books, list):
+            return jsonify({"success": False, "message": "不是有效的收藏备份（缺少 favoriteBooks）"})
+        added = 0
+        for item in books:
+            try:
+                jm_id = int((item or {}).get("id") or 0)
+            except (TypeError, ValueError):
+                continue
+            if jm_id <= 0:
+                continue
+            if has_bit(get_comic_status(jm_id), BIT_FAVORITE):
+                continue
+            set_status_bits(jm_id, BIT_FAVORITE)
+            added += 1
+        return jsonify({"success": True, "data": {"total": len(books), "added": added}})
+    except Exception as e:
+        return jsonify({"success": False, "message": f"导入失败: {e}"})
 
 
 # ─── 分类 API ──────────────────────────────────────────────
@@ -1231,10 +1536,26 @@ def read_comic(jm_id):
                 "current_chapter_pages": chapters[0]["pages"],
                 "total_chapters": len(chapters),
                 "comic_path": chapters[0]["path"],
+                "read_progress": comic_manager.get_read_progress(jm_id),
             },
         }), 200
     except Exception as e:
         return jsonify({"success": False, "message": f"获取阅读数据失败: {str(e)}"})
+
+
+@app.route("/api/read/<int:jm_id>/progress", methods=["POST"])
+def save_read_progress(jm_id):
+    """保存阅读进度（0 基页码）。翻页/滚动时前端防抖上报。"""
+    try:
+        data = request.get_json(silent=True) or {}
+        page = int(data.get("page") or 0)
+    except (ValueError, TypeError):
+        page = 0
+    try:
+        comic_manager.update_read_progress(jm_id, max(0, page))
+        return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)})
 
 
 @app.route("/api/read/<int:jm_id>/chapter/<chapter_id>")
@@ -1460,6 +1781,7 @@ def get_settings():
                 "search_tag_limit", "default_sort", "search_bar_behavior",
                 "hide_downloaded_in_search", "hide_finished_in_search", "search_apply_blocks",
                 "reader_chapter_toast", "shelf_sort",
+                "library_columns", "search_columns",
                 "recommend_enabled", "recommend_count", "recommend_basis", "recommend_custom",
                 # P2：智能关联 + 标签池 + 策略
                 "smart_association", "pref_min_hits", "pref_max_tags",
@@ -1505,6 +1827,7 @@ def save_settings():
             "search_tag_limit", "default_sort", "search_bar_behavior",
             "hide_downloaded_in_search", "hide_finished_in_search", "search_apply_blocks",
             "reader_chapter_toast", "shelf_sort",
+            "library_columns", "search_columns",
             "recommend_enabled", "recommend_count", "recommend_basis", "recommend_custom",
             # P2：智能关联 + 标签池 + 策略
             "smart_association", "pref_min_hits", "pref_max_tags",

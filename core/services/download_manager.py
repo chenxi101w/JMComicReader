@@ -1,21 +1,23 @@
 # -*- coding: utf-8 -*-
-"""
-下载管理器。
+"""下载管理器（轻量版）。
+
+从旧版搬改：异步下载 → TempCache 中转 → 扁平化搬运进 DownloadedComics →
+重压缩（按画质设置）→ 落库；含启动时临时下载恢复。
 """
 
 import asyncio
 import io
+import json
 import os
 import shutil
 from datetime import datetime
-from typing import Callable, Optional
+from typing import Callable
 
-import aiohttp
 from PIL import Image
 
 from core.config import BASE_DIR, DOWNLOAD_DIR, TEMP_CACHE_DIR
 from core.models.database import get_image_quality_params
-from core.services.jm_crawler import JMCrawler
+from core.services.jm_crawler import JMCrawler, DownloadCancelled, get_jm_crawler
 
 
 class DownloadManager:
@@ -29,57 +31,43 @@ class DownloadManager:
         os.makedirs(self.downloaded_dir, exist_ok=True)
         os.makedirs(self.temp_dir, exist_ok=True)
 
-        self.jm_crawler = JMCrawler()
+        # 不在此构造 JMCrawler：复用全局惰性单例（首次下载/恢复时才创建），
+        # 避免 import 阶段多建一个实例、重复加载大缓存拖慢启动。
+        self.jm_crawler = None
 
     def _clean_filename(self, filename: str) -> str:
-        illegal_chars = [
-            "<",
-            ">",
-            ":",
-            '"',
-            "|",
-            "?",
-            "*",
-            "\\",
-            "/",
-            "[",
-            "]",
-            "(",
-            ")",
-        ]
+        illegal_chars = ["<", ">", ":", '"', "|", "?", "*", "\\", "/", "[", "]", "(", ")"]
         for char in illegal_chars:
             filename = filename.replace(char, "_")
-
         filename = "".join(char for char in filename if ord(char) >= 32)
         if len(filename) > 100:
             filename = filename[:100]
         filename = filename.strip(". ")
-
         return filename or "comic"
 
     def _get_current_time(self) -> str:
         return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    def download_comic(
-        self, jm_id: int, comic_info: dict, progress_callback: Callable
-    ) -> bool:
-        """同步包装异步下载。"""
+    def download_comic(self, jm_id: int, comic_info: dict,
+                       progress_callback: Callable, cancel_check=None) -> bool:
+        """同步包装异步下载。支持 cancel_check 取消信号。"""
         loop = asyncio.new_event_loop()
         try:
             asyncio.set_event_loop(loop)
             return loop.run_until_complete(
-                self.download_comic_async(jm_id, comic_info, progress_callback)
+                self.download_comic_async(jm_id, comic_info, progress_callback, cancel_check)
             )
+        except DownloadCancelled:
+            raise
         except Exception as e:
             progress_callback(0, "error", f"下载失败: {str(e)}")
             return False
         finally:
             loop.close()
 
-    async def download_comic_async(
-        self, jm_id: int, comic_info: dict, progress_callback: Callable
-    ) -> bool:
-        """异步下载漫画。"""
+    async def download_comic_async(self, jm_id: int, comic_info: dict,
+                                   progress_callback: Callable,
+                                   cancel_check=None) -> bool:
         try:
             safe_title = self._clean_filename(comic_info["title"])
             comic_dir = os.path.join(self.downloaded_dir, f"{jm_id}_{safe_title}")
@@ -89,14 +77,13 @@ class DownloadManager:
 
             if comic_info.get("cover"):
                 await self._download_image_async(
-                    comic_info["cover"],
-                    os.path.join(comic_dir, "cover.jpg"),
+                    comic_info["cover"], os.path.join(comic_dir, "cover.jpg"),
                 )
 
             progress_callback(15, "downloading", "正在下载漫画图片...")
 
             success = await self._real_comic_download(
-                jm_id, comic_dir, progress_callback
+                jm_id, comic_dir, progress_callback, cancel_check
             )
             if not success:
                 raise RuntimeError("下载失败，未生成可用文件")
@@ -107,21 +94,23 @@ class DownloadManager:
             progress_callback(100, "completed", "下载完成")
             return True
 
+        except DownloadCancelled:
+            raise
         except Exception as e:
             progress_callback(0, "error", f"下载失败: {str(e)}")
             return False
 
-    async def _real_comic_download(
-        self, jm_id: int, comic_dir: str, progress_callback: Callable
-    ) -> bool:
-        """执行真实下载流程，失败时直接报错，不再生成占位内容。"""
+    async def _real_comic_download(self, jm_id: int, comic_dir: str,
+                                   progress_callback: Callable,
+                                   cancel_check=None) -> bool:
+        """执行真实下载流程（jmcomic → TempCache → 搬运 → 重压缩）。"""
 
-        def update_progress(progress, status, message):
+        def update_progress(progress, status, message, extra=None):
             if status == "starting":
                 progress_callback(15, "downloading", "开始下载...")
             elif status == "downloading":
                 mapped_progress = 15 + (progress / 100) * 70
-                progress_callback(int(mapped_progress), "downloading", message)
+                progress_callback(int(mapped_progress), "downloading", message, extra)
             elif status == "processing":
                 progress_callback(85, "processing", message)
             elif status == "completed":
@@ -130,19 +119,20 @@ class DownloadManager:
                 progress_callback(0, "error", message)
 
         try:
-            success = self.jm_crawler.download_comic(jm_id, update_progress)
+            if self.jm_crawler is None:
+                self.jm_crawler = get_jm_crawler()
+            success = self.jm_crawler.download_comic(
+                jm_id, update_progress, cancel_check=cancel_check
+            )
             if not success:
                 return False
 
-            temp_download_dir = os.path.join(
-                self.base_dir, "TempCache", "downloads", str(jm_id)
-            )
+            temp_download_dir = os.path.join(self.base_dir, "TempCache", "downloads", str(jm_id))
             if not os.path.exists(temp_download_dir):
                 return False
 
             subdirs = [
-                name
-                for name in os.listdir(temp_download_dir)
+                name for name in os.listdir(temp_download_dir)
                 if os.path.isdir(os.path.join(temp_download_dir, name))
             ]
 
@@ -175,9 +165,10 @@ class DownloadManager:
                 shutil.rmtree(temp_download_dir)
             except Exception:
                 pass
-
             return True
 
+        except DownloadCancelled:
+            raise
         except Exception as e:
             print(f"真实下载失败 {jm_id}: {e}")
             raise RuntimeError(f"真实下载失败: {e}") from e
@@ -207,14 +198,16 @@ class DownloadManager:
         except Exception as e:
             print(f"恢复临时下载失败: {e}")
 
-    async def _finalize_recovered(self, jm_id: int, temp_dir: str, imgs: list, comic_manager) -> None:
+    async def _finalize_recovered(self, jm_id: int, temp_dir: str, imgs: list,
+                                  comic_manager) -> None:
         """把 TempCache 中滞留的页面补完进 DownloadedComics（扁平化、顺序命名）。"""
         try:
-            # 尽力获取标题（网络不可用时退化为 id）
             title = str(jm_id)
             author = ""
             tags = []
             try:
+                if self.jm_crawler is None:
+                    self.jm_crawler = get_jm_crawler()
                 details = self.jm_crawler.get_search_result_details([jm_id])
                 d = details.get(str(jm_id)) or {}
                 if d.get("title"):
@@ -228,25 +221,22 @@ class DownloadManager:
             comic_dir = os.path.join(self.downloaded_dir, f"{jm_id}_{safe_title}")
             os.makedirs(comic_dir, exist_ok=True)
 
-            # 扁平化：按自然顺序顺序命名为 00001.jpg ...
+            # 扁平化：按自然顺序命名为 00001.jpg ...
             for i, src in enumerate(imgs, start=1):
                 dst = os.path.join(comic_dir, f"{i:05d}.jpg")
                 if os.path.abspath(src) != os.path.abspath(dst):
                     shutil.move(src, dst)
 
-            # 写 info.json（无封面则留空，阅读器用占位）
             info = {
                 "id": jm_id, "title": title, "author": author, "tags": tags,
-                "description": "", "favorites": 0, "pages": len(imgs),
+                "description": "", "pages": len(imgs),
                 "download_time": self._get_current_time(),
             }
-            import json
             with open(os.path.join(comic_dir, "info.json"), "w", encoding="utf-8") as f:
                 json.dump(info, f, ensure_ascii=False, indent=2)
 
             comic_manager.add_downloaded_comic(jm_id, info)
 
-            # 清理 TempCache 残留
             try:
                 shutil.rmtree(temp_dir)
             except Exception:
@@ -256,7 +246,7 @@ class DownloadManager:
             print(f"补完漫画 {jm_id} 失败: {e}")
 
     def _recompress_images(self, comic_dir: str, quality: int, subsampling) -> None:
-        """按图像质量设置重压缩已落库的漫画图片（封面与 PDF 不在此处理）。"""
+        """按图像质量设置重压缩已落库的漫画图片（封面不处理）。"""
         for root, _dirs, files in os.walk(comic_dir):
             for filename in files:
                 low = filename.lower()
@@ -274,86 +264,65 @@ class DownloadManager:
                     pass
 
     async def _download_image_async(self, url: str, save_path: str):
-        """异步下载图片。"""
+        """下载封面图（curl_cffi 同步请求；保持 async 签名与调用方兼容）。"""
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    url, timeout=aiohttp.ClientTimeout(total=30)
-                ) as response:
-                    if response.status != 200:
-                        return
-
-                    content = await response.read()
-                    image = Image.open(io.BytesIO(content))
-                    if image.mode == "RGBA":
-                        rgb_image = Image.new("RGB", image.size, (255, 255, 255))
-                        rgb_image.paste(image, mask=image.split()[3])
-                        image = rgb_image
-
-                    quality, subsampling = get_image_quality_params()
-                    image.save(save_path, "JPEG", quality=quality, subsampling=subsampling)
+            from curl_cffi import requests as curl_requests
+            response = curl_requests.get(url, timeout=30)
+            if response.status_code != 200:
+                return
+            content = response.content
+            image = Image.open(io.BytesIO(content))
+            if image.mode == "RGBA":
+                rgb_image = Image.new("RGB", image.size, (255, 255, 255))
+                rgb_image.paste(image, mask=image.split()[3])
+                image = rgb_image
+            quality, subsampling = get_image_quality_params()
+            image.save(save_path, "JPEG", quality=quality, subsampling=subsampling)
         except Exception as e:
             print(f"异步下载图片失败 {url}: {e}")
 
     async def _save_comic_info(self, comic_dir: str, comic_info: dict):
-        """保存漫画元信息。"""
+        """保存漫画元信息到 info.json。"""
         try:
-            info_path = os.path.join(comic_dir, "info.json")
             save_info = {
                 "id": comic_info.get("id"),
                 "title": comic_info.get("title"),
                 "author": comic_info.get("author"),
                 "tags": comic_info.get("tags", []),
                 "description": comic_info.get("description"),
-                "favorites": comic_info.get("favorites", 0),
                 "pages": comic_info.get("pages", 0),
                 "download_time": self._get_current_time(),
             }
-
-            import json
-
-            with open(info_path, "w", encoding="utf-8") as f:
+            with open(os.path.join(comic_dir, "info.json"), "w", encoding="utf-8") as f:
                 json.dump(save_info, f, ensure_ascii=False, indent=2)
         except Exception as e:
             print(f"保存漫画信息失败: {e}")
 
     async def _ensure_files_ready(self, comic_dir: str, jm_id: int):
-        """等待文件落盘后再写数据库。"""
+        """等待文件落盘后写入数据库。"""
         try:
             await asyncio.sleep(1)
 
             required_files = []
             subdirs = [
-                name
-                for name in os.listdir(comic_dir)
+                name for name in os.listdir(comic_dir)
                 if os.path.isdir(os.path.join(comic_dir, name))
             ]
+            exts = (".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp")
 
             if subdirs:
                 for subdir in subdirs:
                     chapter_path = os.path.join(comic_dir, subdir)
-                    images = [
-                        filename
-                        for filename in os.listdir(chapter_path)
-                        if filename.lower().endswith(
-                            (".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp")
-                        )
-                    ]
+                    images = [f for f in os.listdir(chapter_path) if f.lower().endswith(exts)]
                     required_files.extend(
-                        os.path.join(chapter_path, filename) for filename in images
+                        os.path.join(chapter_path, f) for f in images
                     )
             else:
                 images = [
-                    filename
-                    for filename in os.listdir(comic_dir)
-                    if filename.lower().endswith(
-                        (".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp")
-                    )
-                    and not filename.startswith("cover")
+                    f for f in os.listdir(comic_dir)
+                    if f.lower().endswith(exts) and not f.startswith("cover")
                 ]
-                required_files.extend(
-                    os.path.join(comic_dir, filename) for filename in images
-                )
+                required_files.extend(os.path.join(comic_dir, f) for f in images)
 
             wait_time = 0
             while wait_time < 10:
@@ -362,23 +331,18 @@ class DownloadManager:
                     if not os.path.exists(file_path) or os.path.getsize(file_path) == 0:
                         all_ready = False
                         break
-
                 if all_ready:
                     break
-
                 await asyncio.sleep(1)
                 wait_time += 1
 
             print(f"漫画 {jm_id} 文件准备就绪，共 {len(required_files)} 个文件")
 
             from core.services.comic_manager import ComicManager
-
             comic_manager = ComicManager()
             info_path = os.path.join(comic_dir, "info.json")
             comic_info = {}
             if os.path.exists(info_path):
-                import json
-
                 with open(info_path, "r", encoding="utf-8") as f:
                     comic_info = json.load(f)
 

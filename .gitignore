@@ -51,6 +51,10 @@ cover_cache.json
 # 项目工作记忆（非源码）
 .workbuddy/
 
+# 个人隐私目录（密钥/个人配置/私密笔记，永不提交；仅保留目录说明）
+/private/*
+!/private/README.md
+
 # macOS
 .DS_Store
 

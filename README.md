@@ -2,7 +2,8 @@
 
 > 🆕 **轻量重写版已上线**：[**JMComicLite（JM 电脑版 lite）**](https://github.com/chenxi101w/JM-lite-windows) ——
 > 只保留搜索 / 下载 / 阅读 / 书架核心链路：**启动秒开、下载提速 4.3×（断点续下）、连排阅读、分类树拖拽、订阅巡检、回收站**。
-> 本仓库（旧版）功能全量继续维护，两条线并行：**要快、要干净用 lite，要全功能用这里。**
+> ⭐ **建议大多数用户装 lite**：没必要不要装本仓库的完整版 —— 它保的是全量功能与历史兼容（标签库 / 实验标签库 / 同义词推荐 / 推荐画像等），代价是体积更大、启动更慢。
+> 两条线并行，但**默认推荐 lite**；只有明确需要上述功能时才用完整版。
 
 > **一个绿色、免安装的 JM 漫画本地阅读与管理工具** —— 搜索、在线阅读、批量下载、书架管理、智能推荐，全部在桌面搞定。基于 pywebview + Flask，移动优先的响应式界面。
 
@@ -34,22 +35,17 @@
 <a id="preview"></a>
 ## 📸 预览
 
-> 📌 **截图待补充**：将以下三张图放入 `assets/screenshots/` 后，取消下方 HTML 注释包裹即可显示（详见 [GITHUB_SETUP.md](GITHUB_SETUP.md)）。
->
-> - `home.png` —— 主页 · 智能推荐
-> - `search.png` —— 搜索 · 多维度（关键词 / 标签 / 作者）
-> - `reader.png` —— 阅读器 · 滚轮以鼠标为中心缩放
+> 📌 将以下截图放入 `assets/screenshots/` 目录即可显示（文件名已对应）：
+> `home.png`（主页·智能推荐） · `search.png`（搜索·多维度） · `reader.png`（阅读器·滚轮缩放）
 
-<!-- 截图到位后取消此注释块
-<div align="center">
+<p align="center">
   <img src="assets/screenshots/home.png" width="760" alt="主页 · 智能推荐"/>
   <p><em>主页 · 基于搜索偏好的「为你推荐」</em></p>
   <img src="assets/screenshots/search.png" width="760" alt="搜索 · 多维度"/>
   <p><em>搜索 · 关键词 / 标签 / 作者 三维度</em></p>
   <img src="assets/screenshots/reader.png" width="760" alt="阅读器 · 滚轮缩放"/>
   <p><em>阅读器 · 滚轮以鼠标位置为中心缩放、方向键平移</em></p>
-</div>
--->
+</p>
 
 ---
 
@@ -73,7 +69,7 @@
 
 > 绿色版，推荐。无需安装，解压即用。
 
-1. 获取 `JMComicReader_v2.4.12_portable.zip`（单一完整包，约 28MB，已含程序本体 + 前端，**不含个人数据**）
+1. 获取最新便携包 `JMComicReader_vX.Y.Z_portable.zip`（单一完整包，约 28MB，已含程序本体 + 前端，**不含个人数据**；版本号见仓库 [Releases](https://github.com/chenxi101w/JMComicReader/releases) 或 [docs/升级日志/CHANGELOG.md](docs/升级日志/CHANGELOG.md)）
    - 仓库 **[Releases](https://github.com/chenxi101w/JMComicReader/releases)** 页面获取
 2. 用 **7-Zip** / 系统自带解压工具解压
 3. 双击 `JMComicReader.exe` 即可使用
@@ -185,35 +181,29 @@ jmcomicreader-windows/
 
 | 文档 | 说明 |
 |------|------|
-| [docs/文档导航与开发规范.md](docs/文档导航与开发规范.md) | 文档索引 + 开发规范（接手先读） |
+| [docs/文档导航与开发规范.md](docs/文档导航与开发规范.md) | **整合文档**：文档索引 + 开发规范（接手先读） |
 | [docs/需求文档.md](docs/需求文档.md) | 总体需求 + 变更记录 |
-| [docs/架构报告.md](docs/架构报告.md) | 系统架构与 Android 复刻准备 |
 | [docs/API.md](docs/API.md) | 后端 HTTP 接口契约 |
 | [docs/功能函数清单.md](docs/功能函数清单.md) | 全局功能函数索引 |
 | [docs/已知坑与发版铁律.md](docs/已知坑与发版铁律.md) | 发版铁律 + 已踩过的坑 |
 | [docs/真机验证清单.md](docs/真机验证清单.md) | 发版必测 checklist |
 | [docs/SHARE.md](docs/SHARE.md) | 分享包使用与分发说明 |
-| [docs/CODE_REVIEW.md](docs/CODE_REVIEW.md) | 代码审查与修复记录 |
 | [docs/升级日志/CHANGELOG.md](docs/升级日志/CHANGELOG.md) | 版本更新日志（含每版更新说明） |
 | [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | 故障排查（界面错乱/UI 变样等） |
 | [docs/LICENSE](docs/LICENSE) | MIT 许可证 |
+
+> 📦 **历史归档**：旧文档（架构报告、代码审查记录、旧项目索引、旧维护提示词）已移至 [`docs/history/`](docs/history/)，仅供回溯，新开发请以整合文档与当前代码为准。
 
 ---
 
 <a id="changelog"></a>
 ## 🗺 更新日志
 
-- **v2.4.12** — 阅读器新增「滚轮行为」设置：放大（滚轮缩放+整页完整显示）/ 上下滚动（滚轮翻动+默认半页）二选一，解决滚轮手势冲突。详见 [docs/CHANGELOG.md](docs/CHANGELOG.md)
-- **v2.4.11** — 修复搜索页切回页面后卡片标签消失（恢复缓存后补调 enrichSearchCards 重新拉标签）。详见 [docs/CHANGELOG.md](docs/CHANGELOG.md)
-- **v2.4.10** — 阅读器新增滚轮缩放：以鼠标位置为中心放大/缩小当前页；缩放复用同一张图不再重加载；放大后方向键 ↑/↓ 竖向平移。详见 [docs/CHANGELOG.md](docs/CHANGELOG.md)
-- **v2.4.9** — 代码优化：封面/阅读接口去全量扫描、下载任务去重、批量下载真正限并发（设置项 `max_concurrent_downloads` 生效）。详见 [docs/CHANGELOG.md](docs/CHANGELOG.md)
-- **v2.4.8** — 修复推荐页标签消失（标签按需补全扩展到推荐页）。详见 [docs/CHANGELOG.md](docs/CHANGELOG.md)
-- **v2.4.7** — 修复搜索结果标签消失（前端接上 `/api/search/enrich` 按需补标签）。详见 [docs/CHANGELOG.md](docs/CHANGELOG.md)
-- **v2.4.6** — 搜索优化：客户端连接复用 / 120s 结果缓存 / 封面直连 CDN。详见 [docs/CHANGELOG.md](docs/CHANGELOG.md)
-- **v2.4.5** — 搜索提速、下载完立即可见、本地翻页即时、章节后台预取。详见 [docs/CHANGELOG.md](docs/CHANGELOG.md)
-- **v2.4.4** — 重新发布（区分已发布的 2.4.3）；内置路径遍历防护、跨域收紧、设置白名单、历史清理守护线程、阅读接口 JSON 化等质量修复。详见 [docs/CHANGELOG.md](docs/CHANGELOG.md)
-- **v2.4.3** — 修复搜索详情补全的 O(N²) 重复请求，搜索速度大幅提升
-- **v2.4.2** — 推荐独立成「主页」、设置页返回栈、搜索框视觉去线、推荐自定义内容改为关键字 / 标签 / 作者三区块
+完整版本记录见 [docs/升级日志/CHANGELOG.md](docs/升级日志/CHANGELOG.md)（含 v2.4.x 至最新 v2.14.0 每版说明）。
+
+**近期要点**：
+- **v2.14.0**（当前）— 对齐 lite 核心体验，并补齐隐私防护（pre-commit 隐私扫描钩子 + `private/` 归集目录）。
+- **v2.4.x** 系列 — 阅读器滚轮缩放 / 行为设置、搜索提速与真正限并发、智能推荐主页等大量打磨。
 
 ---
 

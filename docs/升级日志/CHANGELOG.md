@@ -26,6 +26,25 @@
 
 ***
 
+## v2.15.0 — 2026-10-25
+
+### 更新内容
+- **检查更新上 GitHub Releases**（不再依赖自建服务器）：新增 `core/services/updater.py` 与 `GET /api/update/check`；「设置 → 关于」加「检查更新」按钮，命中新版本时给出 tag 与 Release 附件名，点「打开下载页」跳浏览器。匿名访问 api.github.com（无需 token），本地 10 分钟缓存防连点，任何网络异常都降级成提示，不影响启动。
+- **高分屏 / 高刷环境适配**：启动前声明 per-monitor DPI v2（`_enable_hidpi()`，shcore 不可用时退回系统级），125%/150% 缩放下窗口与 WebView2 不再被位图拉伸。Windows 的刷新率由 DWM 直出，无需像 Android 那样手动请求。
+
+### 功能简介
+- 版本可见、可查、可跳转下载；高分屏不再发虚。
+
+### 使用说明
+- 解压 `JMComicReader_v2.15.0_portable.zip` → 双击 `JMComicReader.exe`
+- 需要 Windows 10/11（自带 WebView2 运行时）
+- 用户数据（DownloadedComics / 数据库 / 配置）位于 exe 同级目录，覆盖升级时保留不动
+
+### 已知问题
+- Release 附件仍需人工上传（无 gh CLI 时走网页「Attach binaries」）。
+
+***
+
 ## v2.14.0 — 2026-10-11
 
 ### 更新内容

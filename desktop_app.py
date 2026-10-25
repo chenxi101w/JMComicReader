@@ -840,7 +840,24 @@ def run_desktop():
                 pass
 
 
+def _enable_hidpi() -> None:
+    """高分屏 / 高刷环境适配：per-monitor DPI v2。
+
+    Android 那边要手动要最高刷新率（国产 ROM 会把第三方 App 锁 60Hz），
+    Windows 的刷新率由 DWM 直出、无需干预；真正会让高分屏用户掉体验的是
+    DPI 缩放未声明 —— 125%/150% 下窗口与 WebView2 会被位图拉伸，字发虚。
+    这里在创建窗口前声明 per-monitor v2（shcore 不可用时退回系统级）。
+    """
+    try:
+        ctypes.windll.shcore.SetProcessDpiAwareness(2)  # PROCESS_PER_MONITOR_DPI_AWARE
+    except Exception:
+        try:
+            ctypes.windll.user32.SetProcessDPIAware()
+        except Exception:
+            pass
+
 if __name__ == "__main__":
+    _enable_hidpi()
     try:
         run_desktop()
     except Exception:

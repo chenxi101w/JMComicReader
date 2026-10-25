@@ -2630,6 +2630,44 @@ function initSettings() {
     });
   })();
 
+  // 关于页：检查更新（GitHub Releases，不经过自建服务器）
+  (function initUpdateCheck() {
+    const btn = document.getElementById('btnCheckUpdate');
+    if (!btn) return;
+    const out = document.getElementById('updateResult');
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      const old = btn.textContent;
+      btn.textContent = '检查中…';
+      try {
+        const r = await api('GET', '/api/update/check?force=1');
+        if (!r || !r.success) {
+          out.style.display = 'block';
+          out.textContent = '检查失败：' + ((r && r.error) || '网络不通');
+        } else {
+          const d = r.data || {};
+          out.style.display = 'block';
+          if (!d.success) {
+            out.textContent = '检查失败：' + (d.error || '未知错误');
+          } else if (d.has_update) {
+            const files = (d.assets || []).map(a => a.name).filter(Boolean).join('、');
+            out.innerHTML = '发现新版本 <b>' + escapeHtml(d.latest) + '</b>（当前 ' + escapeHtml(d.current) + '）'
+              + (files ? '<br>Release 附件：' + escapeHtml(files) : '')
+              + '<br><a href="' + escapeHtml(d.url) + '" target="_blank" rel="noreferrer">打开下载页</a>';
+          } else {
+            out.textContent = '已是最新版本 ' + d.current;
+          }
+        }
+      } catch (e) {
+        out.style.display = 'block';
+        out.textContent = '检查失败：' + (e && e.message ? e.message : e);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = old || '检查';
+      }
+    });
+  })();
+
   /* ── 屏蔽管理 ── */
   const blockListEl = document.getElementById('blockList');
   function renderBlockList(rows, titleMap) {

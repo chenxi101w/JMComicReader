@@ -527,6 +527,17 @@ def about_info_route():
     })
 
 
+@app.route("/api/update/check")
+def update_check_route():
+    """检查更新：只走 GitHub Releases（匿名 API，10 分钟缓存）。force=1 绕过缓存。"""
+    from core.services.updater import check_update
+    try:
+        data = check_update(__APP_VERSION__, force=(request.args.get("force") == "1"))
+    except Exception as e:  # 兜底：绝不 500
+        return jsonify({"success": False, "error": f"{type(e).__name__}: {str(e)[:160]}"})
+    return jsonify({"success": True, "data": data})
+
+
 @app.route("/downloads")
 def downloads_page():
     return render_template("downloads.html")
